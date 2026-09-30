@@ -1,0 +1,121 @@
+# Production stack for Scholar.
+#
+#   cp .env.production.example .env.production   # then fill in every value
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Only the frontend (nginx) is published. It serves the app and proxies /api/
+# to the backend, so the browser talks to a single origin and the database,
+# Redis and API stay on the internal network.
+
+name: scholar
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB"]
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [internal]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: scholar-backend:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TIMEZONE: Asia/Phnom_Penh
+      REPORTS_TIMEZONE: Asia/Phnom_Penh
+      POSTGRES_SERVER: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (openssl rand -hex 32)}
+      FIRST_SUPERUSER_EMAIL: ${FIRST_SUPERUSER_EMAIL:?set FIRST_SUPERUSER_EMAIL}
+      FIRST_SUPERUSER_PASSWORD: ${FIRST_SUPERUSER_PASSWORD:?set FIRST_SUPERUSER_PASSWORD}
+      DEFAULT_CURRENT_YEAR: ${DEFAULT_CURRENT_YEAR:-2026}
+      # The app's default resolves to /storage inside the image; keep it on the volume.
+      STORAGE_DIR: /app/storage
+      BACKUP_DIR: /app/storage/backups
+      AI_PROVIDER: ${AI_PROVIDER:-builtin}
+      AI_LLM_BASE_URL: ${AI_LLM_BASE_URL:-}
+      AI_LLM_API_KEY: ${AI_LLM_API_KEY:-}
+      AI_LLM_MODEL: ${AI_LLM_MODEL:-gpt-4o-mini}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      TESSERACT_CMD: /usr/bin/tesseract
+      # Same-origin via the nginx proxy, so only the public URL is needed here.
+      BACKEND_CORS_ORIGINS: ${PUBLIC_URL:?set PUBLIC_URL, e.g. https://scholar.example.com}
+    volumes:
+      - app_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [internal]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Relative: the browser calls the same host, nginx forwards to the backend.
+        VITE_API_URL: /api/v1
+    image: scholar-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_BIND:-8091}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+networks:
+  internal:
+
+volumes:
+  db_data:
+  redis_data:
+  app_storage:

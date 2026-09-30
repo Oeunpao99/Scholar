@@ -1,0 +1,40 @@
+# ── Secrets / local config ─────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# ── Python ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Node / frontend ────────────────────────────────────
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# ── App data (backups, uploads) ────────────────────────
+storage/*
+!storage/.gitkeep
+
+# ── Stray empty files from mistyped shell commands ────
+backend/cd
+backend/python
+backend/uvicorn
+
+# ── Editors / OS ───────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log

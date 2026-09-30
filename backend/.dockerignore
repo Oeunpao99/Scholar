@@ -1,0 +1,18 @@
+# Local config must never be baked into the image: the app reads backend/.env
+# at startup and it would override the container's settings.
+.env
+.env.*
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+tests/
+storage/
+*.log
+.git/

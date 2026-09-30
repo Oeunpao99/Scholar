@@ -1,0 +1,11 @@
+* text=auto
+
+# Run inside Linux containers - must stay LF even on a Windows checkout.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf
+*.yml text eol=lf
+
+*.ttf binary
+*.png binary
+*.ico binary

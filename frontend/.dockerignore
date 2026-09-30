@@ -1,0 +1,8 @@
+# Installed fresh by `npm ci` inside the image (Windows binaries would not run there).
+node_modules/
+dist/
+.env
+.env.*
+*.log
+.git/
+.vscode/
