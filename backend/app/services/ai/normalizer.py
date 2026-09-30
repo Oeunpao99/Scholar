@@ -5,13 +5,12 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from app.services.ai.patterns import KHMER_MONTHS, ORDINAL_MARKS
+from app.services.ai.patterns import KHMER_MONTHS, ORDINAL_MARKS  # noqa: F401
 
 # Khmer digits ០-៩ -> ASCII 0-9
 KHMER_DIGITS = {
     "០": "0", "១": "1", "២": "2", "៣": "3", "៤": "4",
     "៥": "5", "៦": "6", "៧": "7", "៨": "8", "៩": "9",
-    "០": "0", "១": "1", "២": "2",
     # Thai digits occasionally appear in OCR output.
     "๐": "0", "๑": "1", "๒": "2", "๓": "3", "๔": "4",
     "๕": "5", "๖": "6", "๗": "7", "๘": "8", "๙": "9",

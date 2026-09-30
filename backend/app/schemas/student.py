@@ -64,6 +64,23 @@ class StudentUpdate(_StudentFields):
     academic_year: int | None = Field(default=None, ge=2000, le=2100)
 
 
+class StudentExtraction(SchemaBase):
+    """Fields read from an uploaded application form, for the user to review.
+
+    Nothing is saved: the client pre-fills the add-student form with ``values``.
+    """
+
+    values: dict[str, str | int] = Field(default_factory=dict)
+    found: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    ocr_text: str = ""
+    pages: int = 0
+    photo: str | None = Field(
+        default=None, description="Student photo cropped from the form, as a JPEG data URL."
+    )
+
+
 class StudentRead(SchemaBase):
     id: str
     academic_year: int
@@ -77,6 +94,9 @@ class StudentRead(SchemaBase):
     major: str | None = None
     phone: str | None = None
     note: str | None = None
+    has_photo: bool = False
+    # Changes whenever the photo does; clients use it to bust their image cache.
+    photo_version: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

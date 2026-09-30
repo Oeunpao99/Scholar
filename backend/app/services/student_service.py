@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import base64
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationError
+from app.db.base import utcnow
 from app.models.enums import AuditAction
-from app.models.student import Student
+from app.models.student import Student, StudentPhoto
 from app.models.user import User
 from app.repositories.student_repo import StudentRepository
 from app.schemas.common import Page, PageMeta
-from app.schemas.student import StudentCreate, StudentUpdate
+from app.schemas.student import StudentCreate, StudentExtraction, StudentRead, StudentUpdate
+from app.services.ai.documents import load_document
+from app.services.ai.ocr import OcrService
+from app.services.ai.photo import extract_student_photo, normalize_uploaded_photo
+from app.services.ai.student_extractor import extract_student_fields
 from app.services.audit_service import AuditService
 from app.services.settings_service import SettingsService
 
@@ -56,6 +63,134 @@ class StudentService:
                 has_prev=page > 1,
             ),
         )
+
+    async def extract_from_file(self, data: bytes, filename: str | None = None) -> StudentExtraction:
+        """OCR an application form and read the student fields out of it."""
+        ocr = OcrService()
+        if not ocr.available:
+            raise ValidationError(
+                "OCR is not available on this server (install tesseract with the Khmer language pack)."
+            )
+        # Tesseract and PDF rendering are CPU-bound; keep them off the event loop.
+        document = await run_in_threadpool(load_document, data)
+        text = await run_in_threadpool(ocr.extract_text_from_images, document.text_pages)
+        photo = await run_in_threadpool(extract_student_photo, document.photo_pages)
+        fields = extract_student_fields(text, filename=filename)
+        if not fields.values.get("grade") and document.text_pages:
+            try:
+                from app.services.ai.form_template import read_grade_box
+
+                box_grade = await run_in_threadpool(read_grade_box, document.text_pages[0])
+                if box_grade:
+                    fields.values["grade"] = box_grade
+                    fields.warnings = [w for w in fields.warnings if "និទ្ទេស" not in w]
+            except Exception:
+                pass
+
+        # Multimodal Vision AI Enhancement: if LLM endpoint is configured, send page images
+        from app.services.ai.llm_extractor import LlmExtractor
+
+        llm = LlmExtractor()
+        if llm.configured and document.text_pages:
+            try:
+                import io
+
+                images = []
+                for page in document.text_pages[:2]:
+                    buf = io.BytesIO()
+                    page.convert("RGB").save(buf, format="JPEG", quality=85)
+                    images.append(base64.b64encode(buf.getvalue()).decode())
+
+                llm_values = await run_in_threadpool(llm.extract_student, text, images=images)
+                for k in ("full_name", "gender", "grade", "score_rank", "high_school", "stream", "university", "major", "phone"):
+                    v = llm_values.get(k)
+                    if v:
+                        # Prefer LLM value if fields.values was empty or for fields commonly handwritten
+                        if k not in fields.values or fields.values[k] in ("", None) or k in ("high_school", "university", "major", "phone"):
+                            fields.values[k] = v
+                if llm_values.get("stream"):
+                    fields.warnings = [w for w in fields.warnings if "ថ្នាក់" not in w]
+                if llm_values.get("gender"):
+                    fields.warnings = [w for w in fields.warnings if "ភេទ" not in w]
+                if llm_values.get("grade"):
+                    fields.warnings = [w for w in fields.warnings if "និទ្ទេស" not in w]
+            except Exception as exc:
+                import logging
+                logging.getLogger("scholar.ai").warning("Multimodal LLM student extraction failed: %s", exc)
+
+        if not text.strip():
+            fields.warnings.append("រកមិនឃើញអក្សរក្នុងឯកសារនេះទេ — សូមប្រើរូបភាពច្បាស់ជាងនេះ")
+        if photo is None:
+            fields.warnings.append("រកមិនឃើញរូបថតសិស្សក្នុងឯកសារ — អាចបញ្ចូលរូបដោយដៃបាន")
+        return StudentExtraction(
+            values=fields.values,
+            found=fields.found,
+            missing=fields.missing,
+            warnings=fields.warnings,
+            ocr_text=text,
+            pages=document.page_count,
+            photo=f"data:image/jpeg;base64,{base64.b64encode(photo).decode()}" if photo else None,
+        )
+
+    # --------------------------------------------------------------- reading
+    async def to_read(self, students: list[Student]) -> list[StudentRead]:
+        versions = await self.repo.photo_versions([s.id for s in students])
+        return [
+            StudentRead.model_validate(s).model_copy(
+                update={
+                    "has_photo": s.id in versions,
+                    "photo_version": versions[s.id].isoformat() if s.id in versions else None,
+                }
+            )
+            for s in students
+        ]
+
+    async def read(self, student: Student) -> StudentRead:
+        return (await self.to_read([student]))[0]
+
+    # --------------------------------------------------------------- photos
+    async def get_photo(self, student_id: UUID) -> StudentPhoto:
+        photo = await self.repo.get_photo(student_id, with_data=True)
+        if photo is None:
+            raise NotFoundError("This student has no photo.")
+        return photo
+
+    async def set_photo(self, student_id: UUID, data: bytes) -> Student:
+        student = await self.get(student_id)
+        jpeg = await run_in_threadpool(normalize_uploaded_photo, data)
+        photo = await self.repo.get_photo(student_id)
+        if photo is None:
+            self.session.add(StudentPhoto(student_id=student_id, content_type="image/jpeg", data=jpeg))
+        else:
+            photo.data = jpeg
+            photo.content_type = "image/jpeg"
+            photo.updated_at = utcnow()
+        await self.session.flush()
+        await self.audit.log(
+            action=AuditAction.UPDATE,
+            entity_type="student",
+            entity_id=student.id,
+            summary=f"Updated photo of {student.full_name}",
+            user=self.actor,
+        )
+        await self.session.commit()
+        return student
+
+    async def delete_photo(self, student_id: UUID) -> Student:
+        student = await self.get(student_id)
+        photo = await self.repo.get_photo(student_id)
+        if photo is not None:
+            await self.session.delete(photo)
+            await self.session.flush()
+            await self.audit.log(
+                action=AuditAction.UPDATE,
+                entity_type="student",
+                entity_id=student.id,
+                summary=f"Removed photo of {student.full_name}",
+                user=self.actor,
+            )
+            await self.session.commit()
+        return student
 
     async def get(self, student_id: UUID) -> Student:
         student = await self.repo.get(student_id)

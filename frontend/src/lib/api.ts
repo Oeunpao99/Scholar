@@ -11,6 +11,7 @@ import {
   PaginatedResponse,
   SeriesPoint,
   Student,
+  StudentExtraction,
   StudentInput,
   TelegramMessage,
   User,
@@ -35,7 +36,8 @@ class ApiError extends Error {
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('scholar_token')
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    // FormData sets its own multipart Content-Type (with the boundary).
+    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers as Record<string, string>),
   }
 
@@ -329,7 +331,6 @@ export const api = {
     })
   },
 
-  // Users
   // Students
   async getStudents(params: {
     page?: number
@@ -359,6 +360,35 @@ export const api = {
     return request(`/students/${id}`, { method: 'DELETE' })
   },
 
+  /** OCR one application form; returns fields to review. Nothing is saved. */
+  async extractStudent(file: File, signal?: AbortSignal): Promise<StudentExtraction> {
+    const body = new FormData()
+    body.append('file', file)
+    return request('/students/extract', { method: 'POST', body, signal })
+  },
+
+  /** The photo as a Blob. <img src> can't send the bearer token, so fetch it. */
+  async getStudentPhoto(id: string, version?: string | null): Promise<Blob> {
+    const token = localStorage.getItem('scholar_token')
+    const v = version ? `?v=${encodeURIComponent(version)}` : ''
+    const res = await fetch(`${BASE_URL}/students/${id}/photo${v}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) throw new ApiError(`រកមិនឃើញរូបថត (${res.status})`, res.status)
+    return res.blob()
+  },
+
+  async setStudentPhoto(id: string, photo: Blob): Promise<Student> {
+    const body = new FormData()
+    body.append('file', photo, 'photo.jpg')
+    return request(`/students/${id}/photo`, { method: 'PUT', body })
+  },
+
+  async deleteStudentPhoto(id: string): Promise<Student> {
+    return request(`/students/${id}/photo`, { method: 'DELETE' })
+  },
+
+  // Users
   async getUsers(page: number = 1, size: number = 50): Promise<PaginatedResponse<User>> {
     return request(`/users?page=${page}&size=${size}`)
   },

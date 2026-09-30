@@ -22,7 +22,7 @@ os.environ["ENVIRONMENT"] = "test"
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://scholar:scholar@localhost:5432/scholar_test",
+    "postgresql+asyncpg://scholar:scholar@localhost:55433/scholar_test",
 )
 
 TEST_SCHEMA = "scholar_test"

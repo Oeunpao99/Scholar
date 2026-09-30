@@ -96,7 +96,11 @@ class AIExtractionService:
         if provider in {"llm", "llm+ocr"} and self.llm.configured:
             try:
                 extracted = self.llm.extract(
-                    text, default_date=request.default_date, current_year=year, ocr_text=ocr_text
+                    text,
+                    default_date=request.default_date,
+                    current_year=year,
+                    ocr_text=ocr_text,
+                    images=request.images,
                 )
             except Exception as exc:  # noqa: BLE001 - fall back to the local parser
                 logger.warning("LLM extraction failed, falling back to builtin: %s", exc)

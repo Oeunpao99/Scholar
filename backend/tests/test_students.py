@@ -104,6 +104,184 @@ async def test_invalid_student_is_rejected(api):
         assert resp.status_code == 422, (bad, resp.text)
 
 
+# ------------------------------------------------------------ upload / OCR
+FORM_TEXT = "គោត្តនាម-នាម៖ សុខ ដារ៉ា\nភេទ៖ ស្រី\nនិទ្ទេស៖ B\nលេខទូរស័ព្ទ៖ ០១២ ៣៤៥ ៦៧៨"
+
+
+@pytest.fixture
+def fake_ocr(monkeypatch):
+    """Tesseract isn't installed everywhere tests run; stand in for it."""
+    from app.services.ai.ocr import OcrService
+
+    seen: list[int] = []
+
+    def _extract(self, images):
+        seen.append(len(images))
+        return FORM_TEXT
+
+    monkeypatch.setattr(OcrService, "available", property(lambda self: True))
+    monkeypatch.setattr(OcrService, "extract_text_from_images", _extract)
+    return seen
+
+
+def _png() -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (60, 40), "white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _pdf(pages: int) -> bytes:
+    import io
+
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument.new()
+    for _ in range(pages):
+        pdf.new_page(595, 842)
+    buf = io.BytesIO()
+    pdf.save(buf)
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_extract_reads_fields_from_an_image_without_saving(api, fake_ocr):
+    client, headers = api
+    resp = await client.post(
+        "/api/v1/students/extract", headers=headers,
+        files={"file": ("form.png", _png(), "image/png")},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["values"] == {
+        "full_name": "សុខ ដារ៉ា", "gender": "F", "grade": "B", "phone": "012 345 678",
+    }
+    assert "major" in body["missing"]
+    assert body["ocr_text"] == FORM_TEXT
+    assert body["pages"] == 1
+    listed = (await client.get("/api/v1/students", headers=headers)).json()
+    assert listed["meta"]["total"] == 0  # review first; nothing saved
+
+
+@pytest.mark.asyncio
+async def test_extract_renders_pdf_pages_up_to_the_limit(api, fake_ocr):
+    client, headers = api
+    resp = await client.post(
+        "/api/v1/students/extract", headers=headers,
+        files={"file": ("scan.pdf", _pdf(5), "application/pdf")},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["pages"] == 5
+    assert fake_ocr == [2]
+
+
+@pytest.mark.asyncio
+async def test_extract_rejects_files_that_are_not_images_or_pdfs(api, fake_ocr):
+    client, headers = api
+    for name, data in (("notes.txt", b"hello"), ("empty.png", b""), ("fake.pdf", b"%PDF-broken")):
+        resp = await client.post(
+            "/api/v1/students/extract", headers=headers,
+            files={"file": (name, data, "application/octet-stream")},
+        )
+        assert resp.status_code == 422, (name, resp.text)
+    assert fake_ocr == []
+
+
+@pytest.mark.asyncio
+async def test_extract_reports_when_ocr_is_unavailable(api, monkeypatch):
+    from app.services.ai.ocr import OcrService
+
+    monkeypatch.setattr(OcrService, "available", property(lambda self: False))
+    client, headers = api
+    resp = await client.post(
+        "/api/v1/students/extract", headers=headers,
+        files={"file": ("form.png", _png(), "image/png")},
+    )
+    assert resp.status_code == 422
+    assert "OCR" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_extract_returns_the_cropped_photo(api, fake_ocr, monkeypatch):
+    import app.services.student_service as svc
+
+    monkeypatch.setattr(svc, "extract_student_photo", lambda pages: b"\xff\xd8\xff-fake-jpeg")
+    client, headers = api
+    resp = await client.post(
+        "/api/v1/students/extract", headers=headers,
+        files={"file": ("form.png", _png(), "image/png")},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["photo"].startswith("data:image/jpeg;base64,")
+
+
+# ------------------------------------------------------------------ photos
+@pytest.mark.asyncio
+async def test_photo_upload_view_replace_and_remove(api):
+    client, headers = api
+    sid = (await client.post("/api/v1/students", headers=headers, json=STUDENT)).json()["id"]
+    assert (await client.get(f"/api/v1/students/{sid}/photo", headers=headers)).status_code == 404
+
+    resp = await client.put(
+        f"/api/v1/students/{sid}/photo", headers=headers,
+        files={"file": ("me.png", _png(), "image/png")},
+    )
+    assert resp.status_code == 200, resp.text
+    first_version = resp.json()["photo_version"]
+    assert resp.json()["has_photo"] is True and first_version
+
+    img = await client.get(f"/api/v1/students/{sid}/photo", headers=headers)
+    assert img.status_code == 200
+    assert img.headers["content-type"] == "image/jpeg"
+    assert img.content[:3] == b"\xff\xd8\xff"
+    assert "private" in img.headers["cache-control"]
+
+    listed = (await client.get("/api/v1/students", headers=headers)).json()["items"]
+    assert listed[0]["has_photo"] is True and listed[0]["photo_version"] == first_version
+
+    replaced = await client.put(
+        f"/api/v1/students/{sid}/photo", headers=headers,
+        files={"file": ("me2.png", _png(), "image/png")},
+    )
+    assert replaced.json()["photo_version"] != first_version  # busts client caches
+
+    removed = await client.delete(f"/api/v1/students/{sid}/photo", headers=headers)
+    assert removed.json()["has_photo"] is False
+    assert (await client.get(f"/api/v1/students/{sid}/photo", headers=headers)).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_photo_rejects_non_images_and_needs_auth(api):
+    client, headers = api
+    sid = (await client.post("/api/v1/students", headers=headers, json=STUDENT)).json()["id"]
+    bad = await client.put(
+        f"/api/v1/students/{sid}/photo", headers=headers,
+        files={"file": ("x.txt", b"hello", "text/plain")},
+    )
+    assert bad.status_code == 422
+    assert (await client.get(f"/api/v1/students/{sid}/photo")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_student_removes_the_photo(api, session):
+    from sqlalchemy import func, select
+
+    from app.models import StudentPhoto
+
+    client, headers = api
+    sid = (await client.post("/api/v1/students", headers=headers, json=STUDENT)).json()["id"]
+    await client.put(
+        f"/api/v1/students/{sid}/photo", headers=headers,
+        files={"file": ("me.png", _png(), "image/png")},
+    )
+    await client.delete(f"/api/v1/students/{sid}", headers=headers)
+    count = (await session.execute(select(func.count()).select_from(StudentPhoto))).scalar_one()
+    assert count == 0
+
+
 @pytest.mark.asyncio
 async def test_student_changes_are_audited(api):
     client, headers = api

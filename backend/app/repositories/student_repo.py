@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+import uuid
+from datetime import datetime
 
-from app.models.student import Student
+from sqlalchemy import func, select
+from sqlalchemy.orm import undefer
+
+from app.models.student import Student, StudentPhoto
 from app.repositories.base import BaseRepository
 
 
@@ -45,3 +49,19 @@ class StudentRepository(BaseRepository[Student]):
         # Entry order, so the row number (ល.រ) stays stable as students are added.
         stmt = stmt.order_by(Student.created_at.asc(), Student.id.asc()).offset(offset).limit(limit)
         return list((await self.session.scalars(stmt)).all()), total
+
+    # --------------------------------------------------------------- photos
+    async def photo_versions(self, student_ids: list[uuid.UUID]) -> dict[uuid.UUID, datetime]:
+        """When each student's photo last changed - without loading the images."""
+        if not student_ids:
+            return {}
+        stmt = select(StudentPhoto.student_id, StudentPhoto.updated_at).where(
+            StudentPhoto.student_id.in_(student_ids)
+        )
+        return {sid: ts for sid, ts in (await self.session.execute(stmt)).all()}
+
+    async def get_photo(self, student_id: uuid.UUID, *, with_data: bool = False) -> StudentPhoto | None:
+        stmt = select(StudentPhoto).where(StudentPhoto.student_id == student_id)
+        if with_data:
+            stmt = stmt.options(undefer(StudentPhoto.data))
+        return await self.first(stmt)

@@ -26,6 +26,9 @@ dependencies = [
     "orjson>=3.10.7",
     "pytesseract>=0.3.13",
     "Pillow>=11.0.0",
+    "pypdfium2>=4.30.0",
+    # 4.x: OpenCV 5 dropped CascadeClassifier and the bundled face models.
+    "opencv-python-headless>=4.10,<5",
 ]
 
 [project.optional-dependencies]

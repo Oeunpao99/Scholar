@@ -164,11 +164,23 @@ export interface Student {
   major?: string | null
   phone?: string | null
   note?: string | null
+  has_photo?: boolean
+  photo_version?: string | null
   created_at?: string
   updated_at?: string
 }
 
-export type StudentInput = Omit<Student, 'id' | 'created_at' | 'updated_at' | 'academic_year'> & {
+export interface StudentExtraction {
+  values: Partial<Record<'full_name' | 'gender' | 'grade' | 'score_rank' | 'high_school' | 'stream' | 'university' | 'major' | 'phone', string | number>>
+  found: string[]
+  missing: string[]
+  warnings: string[]
+  ocr_text: string
+  pages: number
+  photo?: string | null // JPEG data URL cropped from the form
+}
+
+export type StudentInput = Omit<Student, 'id' | 'created_at' | 'updated_at' | 'academic_year' | 'has_photo' | 'photo_version'> & {
   academic_year?: number
 }
 

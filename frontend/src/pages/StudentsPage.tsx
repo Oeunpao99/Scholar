@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
   Search, RefreshCw, Pencil, Trash2, UserPlus, ChevronLeft, ChevronRight, X, Save, AlertTriangle, GraduationCap,
+  ScanText, FileText, Check, Loader,
 } from 'lucide-react'
 import { api } from '../lib/api'
-import { PaginatedResponse, Student, StudentInput } from '../types'
+import { PaginatedResponse, Student, StudentExtraction, StudentInput } from '../types'
 import { useAuth } from '../context/AuthContext'
+import { StudentPhoto } from '../components/StudentPhoto'
 
 const GRADES = ['A', 'B', 'C', 'D', 'E'] as const
 const GENDER_LABEL: Record<string, string> = { M: 'ប្រុស', F: 'ស្រី' }
@@ -57,6 +59,53 @@ const toPayload = (f: FormState): StudentInput => ({
 
 const dash = (v?: string | number | null) => (v === null || v === undefined || v === '' ? '–' : v)
 
+const FIELD_LABEL: Record<string, string> = {
+  full_name: 'គោត្តនាម-នាម', gender: 'ភេទ', grade: 'និទ្ទេស', score_rank: 'លំដាប់ពិន្ទុ',
+  high_school: 'វិទ្យាល័យ', stream: 'ថ្នាក់', university: 'សាកលវិទ្យាល័យ/វិទ្យាស្ថាន',
+  major: 'ជំនាញ/មុខវិជ្ជា', phone: 'លេខទូរស័ព្ទ',
+}
+
+const fromExtraction = (x: StudentExtraction): FormState => {
+  const v = x.values
+  const str = (k: keyof typeof v) => (v[k] === undefined ? '' : String(v[k]))
+  return {
+    ...EMPTY_FORM,
+    full_name: str('full_name'),
+    gender: (str('gender') as FormState['gender']) || '',
+    grade: str('grade'),
+    score_rank: str('score_rank'),
+    high_school: str('high_school'),
+    stream: str('stream'),
+    university: str('university'),
+    major: str('major'),
+    phone: str('phone'),
+  }
+}
+
+type Scan = { name: string; previewUrl: string | null; result: StudentExtraction }
+
+// The server reads the form in one request, so there is no progress to read back.
+// These are the stages the work really goes through, revealed by elapsed time, so
+// the wait shows movement instead of a frozen screen. A slow machine simply
+// spends longer on an early stage.
+const SCAN_STAGES = [
+  { at: 0, label: 'កំពុងផ្ទុកឯកសារឡើងម៉ាស៊ីន…' },
+  { at: 900, label: 'កំពុងបើកទំព័រពីឯកសារ…' },
+  { at: 2200, label: 'កំពុងវាស់អក្សរក្នុងឯកសារ…' },
+  { at: 7000, label: 'កំពុងស្វែងរករូបថតសិស្ស…' },
+  { at: 13000, label: 'កំពុងបញ្ចប់ការវាស់…' },
+]
+// Creeps towards 90% and stops there: the bar must never claim to be finished
+// while the server is still working.
+const scanPercent = (ms: number) => Math.min(90, 100 * (1 - Math.exp(-ms / 5200)))
+const fileSize = (bytes: number) =>
+  bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
+
+type PhotoChange =
+  | { kind: 'keep' }
+  | { kind: 'new'; blob: Blob; url: string; fromScan: boolean }
+  | { kind: 'remove' }
+
 export const StudentsPage: React.FC = () => {
   const { user } = useAuth()
   const canEdit = ['superadmin', 'admin', 'manager', 'staff'].includes(user?.role || '')
@@ -85,6 +134,122 @@ export const StudentsPage: React.FC = () => {
   const [toDelete, setToDelete] = useState<Student | null>(null)
   const [deleting, setDeleting] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [scan, setScan] = useState<Scan | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [scanPending, setScanPending] = useState<{ name: string; size: number } | null>(null)
+  const [scanMs, setScanMs] = useState(0)
+  const scanAbort = useRef<AbortController | null>(null)
+
+  // What saving should do with the photo: leave it, replace it, or remove it.
+  const [photo, setPhoto] = useState<PhotoChange>({ kind: 'keep' })
+  const photoRef = useRef<HTMLInputElement>(null)
+  const resetPhoto = () => setPhoto((p) => { if (p.kind === 'new') URL.revokeObjectURL(p.url); return { kind: 'keep' } })
+  const choosePhoto = (blob: Blob, fromScan = false) =>
+    setPhoto((p) => {
+      if (p.kind === 'new') URL.revokeObjectURL(p.url)
+      return { kind: 'new', blob, url: URL.createObjectURL(blob), fromScan }
+    })
+  const onPhotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) { setFormError('រូបថតត្រូវតែជា JPG, PNG ឬ WebP'); return }
+    choosePhoto(file)
+  }
+
+  const clearScan = () => {
+    setScan((s) => { if (s?.previewUrl) URL.revokeObjectURL(s.previewUrl); return null })
+  }
+  const closeForm = () => { setFormFor(null); clearScan(); resetPhoto() }
+  // Highlight what OCR filled in, so the reviewer knows which values to double-check.
+  const fieldClass = (key: string) => (scan?.result.found.includes(key) ? 'input-field prefilled' : 'input-field')
+
+  const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow picking the same file again
+    if (file) scanFile(file)
+  }
+
+  // Drag & drop anywhere on the page. The counter survives dragenter/leave
+  // firing for every child element the pointer crosses.
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
+  const dropEnabled = canEdit && !scanning && !(formFor && formFor !== 'new')
+
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!dropEnabled || !hasFiles(e)) return
+    e.preventDefault()
+    dragDepth.current += 1
+    setDragging(true)
+  }
+  const onDragOver = (e: React.DragEvent) => {
+    if (!dropEnabled || !hasFiles(e)) return
+    e.preventDefault() // required, or the browser opens the file itself
+    e.dataTransfer.dropEffect = 'copy'
+  }
+  const onDragLeave = (e: React.DragEvent) => {
+    if (!dropEnabled || !hasFiles(e)) return
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDragging(false)
+  }
+  const onDrop = (e: React.DragEvent) => {
+    if (!dropEnabled || !hasFiles(e)) return
+    e.preventDefault()
+    dragDepth.current = 0
+    setDragging(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 1) setScanError('សូមទម្លាក់ឯកសារម្តងមួយ (សិស្សម្នាក់ក្នុងមួយឯកសារ)')
+    if (files[0]) scanFile(files[0])
+  }
+
+  const scanFile = async (file: File) => {
+    if (file.type && !ACCEPTED.includes(file.type)) {
+      setScanError('សូមប្រើឯកសារ JPG, PNG, WebP ឬ PDF')
+      return
+    }
+    const controller = new AbortController()
+    scanAbort.current = controller
+    setScanning(true)
+    setScanMs(0)
+    setScanPending({ name: file.name, size: file.size })
+    setScanError(null)
+    try {
+      const result = await api.extractStudent(file, controller.signal)
+      clearScan()
+      setScan({
+        name: file.name,
+        previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+        result,
+      })
+      setForm(fromExtraction(result))
+      resetPhoto()
+      if (result.photo) choosePhoto(await (await fetch(result.photo)).blob(), true)
+      setFormError(null)
+      setFormFor('new')
+    } catch (err: any) {
+      // Cancelling is a choice, not a failure — the server aborts on disconnect.
+      if (err?.name !== 'AbortError') setScanError(`អានឯកសារមិនបាន: ${err.message}`)
+    } finally {
+      scanAbort.current = null
+      setScanning(false)
+      setScanPending(null)
+    }
+  }
+
+  const cancelScan = () => scanAbort.current?.abort()
+
+  // Drives the progress overlay: ticks a tenth of a second while the request runs.
+  useEffect(() => {
+    if (!scanning) { setScanMs(0); return }
+    const started = Date.now()
+    const id = window.setInterval(() => setScanMs(Date.now() - started), 100)
+    return () => window.clearInterval(id)
+  }, [scanning])
 
   useEffect(() => {
     api.getCurrentYear()
@@ -120,14 +285,14 @@ export const StudentsPage: React.FC = () => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      setFormFor(null); setToDelete(null)
+      closeForm(); setToDelete(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const openAdd = () => { setForm(EMPTY_FORM); setFormError(null); setFormFor('new') }
-  const openEdit = (s: Student) => { setForm(toForm(s)); setFormError(null); setFormFor(s) }
+  const openAdd = () => { clearScan(); resetPhoto(); setForm(EMPTY_FORM); setFormError(null); setFormFor('new') }
+  const openEdit = (s: Student) => { clearScan(); resetPhoto(); setForm(toForm(s)); setFormError(null); setFormFor(s) }
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }))
 
@@ -138,19 +303,32 @@ export const StudentsPage: React.FC = () => {
     setSaving(true)
     setFormError(null)
     try {
+      let saved: Student | null = null
       if (formFor === 'new') {
-        const created = await api.createStudent({ ...toPayload(form), academic_year: year ?? undefined })
-        setNotice(`បានបន្ថែម ${created.full_name}`)
+        saved = await api.createStudent({ ...toPayload(form), academic_year: year ?? undefined })
+        setNotice(`បានបន្ថែម ${saved.full_name}`)
       } else if (formFor) {
-        const updated = await api.updateStudent(formFor.id, toPayload(form))
-        setNotice(`បានកែប្រែ ${updated.full_name}`)
+        saved = await api.updateStudent(formFor.id, toPayload(form))
+        setNotice(`បានកែប្រែ ${saved.full_name}`)
+      }
+      // The student is saved at this point; a photo failure must not make the
+      // user retry the whole form (that would add the student twice).
+      if (saved) {
+        try {
+          if (photo.kind === 'new') await api.setStudentPhoto(saved.id, photo.blob)
+          else if (photo.kind === 'remove' && saved.has_photo) await api.deleteStudentPhoto(saved.id)
+        } catch (err: any) {
+          setNotice(`បានរក្សាទុក ${saved.full_name} ប៉ុន្តែរូបថតមិនបានរក្សាទុក: ${err.message}`)
+        }
       }
       if (addAnother) {
         // Keep school/stream/university: consecutive entries usually share them.
+        clearScan()
+        resetPhoto()
         setForm((f) => ({ ...EMPTY_FORM, high_school: f.high_school, stream: f.stream, university: f.university }))
         nameRef.current?.focus()
       } else {
-        setFormFor(null)
+        closeForm()
       }
       fetchStudents()
     } catch (err: any) {
@@ -179,9 +357,44 @@ export const StudentsPage: React.FC = () => {
   const clearFilters = () => { setSearchInput(''); setGender(''); setGrade(''); setStream(''); setPage(1) }
   const yearOptions = currentYear ? [currentYear + 1, currentYear, currentYear - 1, currentYear - 2] : []
   const rowOffset = data ? (data.meta.page - 1) * data.meta.size : 0
+  const scanStep = SCAN_STAGES.filter((s) => scanMs >= s.at).length - 1
 
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '70vh' }}
+      onDragEnter={onDragEnter} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+      {dragging && (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay-card">
+            <ScanText size={36} />
+            <strong>ទម្លាក់ពាក្យស្នើសុំនៅទីនេះ</strong>
+            <span>JPG, PNG, WebP ឬ PDF · សិស្សម្នាក់ក្នុងមួយឯកសារ</span>
+          </div>
+        </div>
+      )}
+      {scanning && scanPending && (
+        <div className="scan-overlay" role="dialog" aria-modal="true" aria-label="កំពុងអានឯកសារ">
+          <div className="scan-overlay-card">
+            <div className="scan-spinner"><RefreshCw size={22} className="spin" /></div>
+            <strong aria-live="polite">{SCAN_STAGES[scanStep].label}</strong>
+            <span>{scanPending.name} · {fileSize(scanPending.size)}</span>
+            <div className="scan-bar">
+              <i style={{ width: `${scanPercent(scanMs)}%` }} />
+            </div>
+            <ol className="scan-steps">
+              {SCAN_STAGES.map((s, i) => (
+                <li key={s.at} className={`scan-step ${i < scanStep ? 'done' : i === scanStep ? 'active' : ''}`}>
+                  {i < scanStep ? <Check size={13} /> : i === scanStep ? <Loader size={13} className="spin" /> : <span className="scan-dot" />}
+                  <span>{s.label.replace('…', '')}</span>
+                </li>
+              ))}
+            </ol>
+            <span className="scan-hint">
+              ប្រព័ន្ធកំពុងអានឯកសារ — ឯកសារច្រើនទំព័រត្រូវការពេលបន្តិច · {Math.floor(scanMs / 1000)} វិនាទី
+            </span>
+            <button className="btn btn-ghost" onClick={cancelScan}>បោះបង់</button>
+          </div>
+        </div>
+      )}
       <div className="page-header">
         <div>
           <h1 className="page-title">បញ្ជីឈ្មោះសិស្ស</h1>
@@ -192,12 +405,29 @@ export const StudentsPage: React.FC = () => {
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
           {canEdit && (
-            <button onClick={openAdd} className="btn btn-primary">
-              <UserPlus size={16} /> បន្ថែមសិស្ស
-            </button>
+            <>
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={onFile} hidden aria-hidden="true" />
+              <button onClick={() => fileRef.current?.click()} className="btn btn-secondary" disabled={scanning}
+                title="ជ្រើស ឬអូសទម្លាក់ពាក្យស្នើសុំ (JPG, PNG, PDF) — ប្រព័ន្ធនឹងអានព័ត៌មានឲ្យ">
+                {scanning ? <RefreshCw size={16} className="spin" /> : <ScanText size={16} />}
+                {scanning ? 'កំពុងអានឯកសារ…' : 'បញ្ចូលពីឯកសារ'}
+              </button>
+              <button onClick={openAdd} className="btn btn-primary">
+                <UserPlus size={16} /> បន្ថែមសិស្ស
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {scanError && (
+        <div role="alert" className="notice notice-rose">
+          <AlertTriangle size={15} />
+          <span style={{ flex: 1 }}>{scanError}</span>
+          <button className="btn btn-ghost" style={{ padding: 2 }} onClick={() => setScanError(null)} aria-label="បិទ"><X size={14} /></button>
+        </div>
+      )}
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -247,7 +477,10 @@ export const StudentsPage: React.FC = () => {
             <GraduationCap size={32} />
             <span>{hasFilters ? 'ពុំមានសិស្សត្រូវនឹងតម្រងនេះទេ' : `មិនទាន់មានសិស្សក្នុងឆ្នាំ ${year ?? ''} នៅឡើយ`}</span>
             {canEdit && !hasFilters && (
-              <button onClick={openAdd} className="btn btn-primary btn-sm"><UserPlus size={15} /> បន្ថែមសិស្សដំបូង</button>
+              <>
+                <button onClick={openAdd} className="btn btn-primary btn-sm"><UserPlus size={15} /> បន្ថែមសិស្សដំបូង</button>
+                <span style={{ fontSize: '0.8rem' }}>ឬអូសទម្លាក់ពាក្យស្នើសុំ (JPG, PNG, PDF) មកទីនេះ</span>
+              </>
             )}
           </div>
         ) : (
@@ -256,6 +489,7 @@ export const StudentsPage: React.FC = () => {
               <thead>
                 <tr>
                   <th className="num">ល.រ</th>
+                  <th className="center">រូបថត</th>
                   <th>គោត្តនាម-នាម</th>
                   <th className="center">ភេទ</th>
                   <th className="center">និ.</th>
@@ -273,6 +507,9 @@ export const StudentsPage: React.FC = () => {
                 {data.items.map((s, i) => (
                   <tr key={s.id}>
                     <td className="num">{rowOffset + i + 1}</td>
+                    <td className="center" style={{ paddingTop: 6, paddingBottom: 6 }}>
+                      <StudentPhoto id={s.id} name={s.full_name} version={s.has_photo ? s.photo_version : null} />
+                    </td>
                     <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{s.full_name}</td>
                     <td className="center">{GENDER_LABEL[s.gender] || s.gender}</td>
                     <td className="center">
@@ -325,24 +562,84 @@ export const StudentsPage: React.FC = () => {
 
       {/* ── Add / edit ── */}
       {formFor && (
-        <div className="modal-backdrop" onClick={() => !saving && setFormFor(null)}>
-          <div className="glass-panel modal-card" style={{ maxWidth: '720px' }} role="dialog" aria-modal="true" aria-labelledby="st-title" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => !saving && closeForm()}>
+          <div className="glass-panel modal-card" style={{ maxWidth: scan ? '1180px' : '720px' }} role="dialog" aria-modal="true" aria-labelledby="st-title" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <div className="audit-entity">ឆ្នាំ {formFor === 'new' ? year : formFor.academic_year}</div>
-                <h2 id="st-title" style={{ fontSize: '1.1rem' }}>{formFor === 'new' ? 'បន្ថែមសិស្ស' : `កែប្រែ · ${formFor.full_name}`}</h2>
+                <h2 id="st-title" style={{ fontSize: '1.1rem' }}>
+                  {formFor !== 'new' ? `កែប្រែ · ${formFor.full_name}` : scan ? 'ពិនិត្យព័ត៌មានពីឯកសារ' : 'បន្ថែមសិស្ស'}
+                </h2>
               </div>
-              <button onClick={() => setFormFor(null)} className="btn btn-ghost" aria-label="បិទ"><X size={18} /></button>
+              <button onClick={closeForm} className="btn btn-ghost" aria-label="បិទ"><X size={18} /></button>
             </div>
 
+            <div className={scan ? 'scan-review' : undefined}>
+            {scan && (
+              <aside className="scan-pane">
+                {scan.previewUrl ? (
+                  <a href={scan.previewUrl} target="_blank" rel="noreferrer" title="បើកទំហំពេញ">
+                    <img src={scan.previewUrl} alt={`ឯកសារ ${scan.name}`} className="scan-preview" />
+                  </a>
+                ) : (
+                  <div className="scan-file"><FileText size={22} /> {scan.name} · {scan.result.pages} ទំព័រ</div>
+                )}
+                <details className="scan-ocr">
+                  <summary>អត្ថបទដែលអានបាន (OCR)</summary>
+                  <pre>{scan.result.ocr_text || '—'}</pre>
+                </details>
+              </aside>
+            )}
+
             <form onSubmit={(e) => { e.preventDefault(); save(false) }} className="student-form">
+              {scan && (
+                <div className={`notice ${scan.result.found.length ? 'notice-amber' : 'notice-rose'} span-4`} style={{ alignItems: 'flex-start' }}>
+                  <ScanText size={15} style={{ marginTop: 3, flexShrink: 0 }} />
+                  <div style={{ lineHeight: 1.6 }}>
+                    <strong>អានបាន {scan.result.found.length}/{scan.result.found.length + scan.result.missing.length} ចន្លោះ</strong>
+                    {' '}— សូមពិនិត្យ និងកែតម្រូវមុនរក្សាទុក។ ចន្លោះដែលបំពេញដោយប្រព័ន្ធមានពណ៌លឿង។
+                    {scan.result.missing.length > 0 && (
+                      <div>មិនទាន់មាន: {scan.result.missing.map((f) => FIELD_LABEL[f] || f).join(', ')}</div>
+                    )}
+                    {scan.result.warnings.map((w) => <div key={w}>{w}</div>)}
+                  </div>
+                </div>
+              )}
+              {(() => {
+                const editing = formFor !== 'new' ? formFor : null
+                const src = photo.kind === 'new' ? photo.url : null
+                const hasSaved = photo.kind === 'keep' && !!editing?.has_photo
+                const hasAny = !!src || hasSaved
+                return (
+                  <div className={`photo-field ${photo.kind === 'new' && photo.fromScan ? 'prefilled' : ''}`}>
+                    <span className="input-label">រូបថត</span>
+                    <StudentPhoto size="lg" name={form.full_name || '?'} src={src}
+                      id={hasSaved ? editing!.id : undefined} version={hasSaved ? editing!.photo_version : null} />
+                    <input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={onPhotoFile} />
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <button type="button" className="link-button" onClick={() => photoRef.current?.click()}>
+                        {hasAny ? 'ប្តូររូប' : 'ជ្រើសរូប'}
+                      </button>
+                      {hasAny && (
+                        <>
+                          <span style={{ color: 'var(--text-dim)' }}>·</span>
+                          <button type="button" className="link-button" style={{ color: 'var(--rose-primary)' }}
+                            onClick={() => { resetPhoto(); if (hasSaved || editing?.has_photo) setPhoto({ kind: 'remove' }) }}>
+                            លុបរូប
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
               <label className="input-group span-2">
                 <span className="input-label">គោត្តនាម-នាម <span className="req">*</span></span>
-                <input ref={nameRef} autoFocus required className="input-field" value={form.full_name} onChange={set('full_name')} placeholder="ឧ. សុខ ដារ៉ា" maxLength={255} />
+                <input ref={nameRef} autoFocus required className={fieldClass('full_name')} value={form.full_name} onChange={set('full_name')} placeholder="ឧ. សុខ ដារ៉ា" maxLength={255} />
               </label>
               <label className="input-group">
                 <span className="input-label">ភេទ <span className="req">*</span></span>
-                <select required className="input-field" value={form.gender} onChange={set('gender')}>
+                <select required className={fieldClass('gender')} value={form.gender} onChange={set('gender')}>
                   <option value="">— ជ្រើសរើស —</option>
                   <option value="M">ប្រុស</option>
                   <option value="F">ស្រី</option>
@@ -350,18 +647,18 @@ export const StudentsPage: React.FC = () => {
               </label>
               <label className="input-group">
                 <span className="input-label">និទ្ទេស</span>
-                <select className="input-field" value={form.grade} onChange={set('grade')}>
+                <select className={fieldClass('grade')} value={form.grade} onChange={set('grade')}>
                   <option value="">–</option>
                   {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
                 </select>
               </label>
               <label className="input-group">
                 <span className="input-label">លំដាប់ពិន្ទុ</span>
-                <input type="number" min={1} inputMode="numeric" className="input-field" value={form.score_rank} onChange={set('score_rank')} placeholder="ឧ. 152" />
+                <input type="number" min={1} inputMode="numeric" className={fieldClass('score_rank')} value={form.score_rank} onChange={set('score_rank')} placeholder="ឧទាហរណ៍៖ 152" />
               </label>
               <label className="input-group">
                 <span className="input-label">ថ្នាក់</span>
-                <select className="input-field" value={form.stream} onChange={set('stream')}>
+                <select className={fieldClass('stream')} value={form.stream} onChange={set('stream')}>
                   <option value="">–</option>
                   <option value="science">វិទ្យាសាស្ត្រ</option>
                   <option value="social_science">វិទ្យាសាស្ត្រសង្គម</option>
@@ -369,19 +666,19 @@ export const StudentsPage: React.FC = () => {
               </label>
               <label className="input-group span-2">
                 <span className="input-label">វិទ្យាល័យ</span>
-                <input className="input-field" value={form.high_school} onChange={set('high_school')} maxLength={255} />
+                <input className={fieldClass('high_school')} value={form.high_school} onChange={set('high_school')} maxLength={255} />
               </label>
               <label className="input-group span-2">
                 <span className="input-label">ស្នើសុំនៅសាកលវិទ្យាល័យ/វិទ្យាស្ថាន</span>
-                <input className="input-field" value={form.university} onChange={set('university')} maxLength={255} />
+                <input className={fieldClass('university')} value={form.university} onChange={set('university')} maxLength={255} />
               </label>
               <label className="input-group span-2">
                 <span className="input-label">ជំនាញ/មុខវិជ្ជា</span>
-                <input className="input-field" value={form.major} onChange={set('major')} maxLength={255} />
+                <input className={fieldClass('major')} value={form.major} onChange={set('major')} maxLength={255} />
               </label>
               <label className="input-group span-2">
                 <span className="input-label">លេខទូរស័ព្ទ</span>
-                <input type="tel" className="input-field" value={form.phone} onChange={set('phone')} placeholder="ឧ. 012 345 678" maxLength={32} />
+                <input type="tel" className={fieldClass('phone')} value={form.phone} onChange={set('phone')} placeholder="ឧទាហរណ៍៖ 012 345 678" maxLength={32} />
               </label>
               <label className="input-group span-4">
                 <span className="input-label">ផ្សេងៗ</span>
@@ -395,7 +692,7 @@ export const StudentsPage: React.FC = () => {
               <div className="modal-foot span-4">
                 <span className="audit-entity"><span className="req">*</span> ត្រូវតែបំពេញ</span>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button type="button" onClick={() => setFormFor(null)} className="btn btn-secondary" disabled={saving}>បោះបង់</button>
+                  <button type="button" onClick={closeForm} className="btn btn-secondary" disabled={saving}>បោះបង់</button>
                   {formFor === 'new' && (
                     <button type="button" onClick={() => save(true)} className="btn btn-secondary" disabled={saving}>
                       <UserPlus size={15} /> រក្សាទុក និងបន្ថែមថ្មី
@@ -407,6 +704,7 @@ export const StudentsPage: React.FC = () => {
                 </div>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}

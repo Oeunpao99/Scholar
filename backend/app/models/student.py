@@ -4,11 +4,23 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from datetime import datetime
 
-from app.db.base import Base, TimestampMixin
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import Mapped, deferred, mapped_column
+
+from app.db.base import Base, TimestampMixin, utcnow
 
 GENDERS = ("M", "F")
 STREAMS = ("science", "social_science")
@@ -48,4 +60,20 @@ class Student(Base, TimestampMixin):
     note: Mapped[str | None] = mapped_column(Text)  # ផ្សេងៗ
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class StudentPhoto(Base):
+    """One photo per student, kept apart so listing students never loads image bytes."""
+
+    __tablename__ = "student_photos"
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("students.id", ondelete="CASCADE"), primary_key=True
+    )
+    content_type: Mapped[str] = mapped_column(String(32), nullable=False, default="image/jpeg")
+    data: Mapped[bytes] = deferred(mapped_column(LargeBinary, nullable=False))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow,
+        server_default=func.now(), nullable=False,
     )
