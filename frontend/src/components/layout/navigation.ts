@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   FilePlus,
   History,
+  GraduationCap,
   Send,
   BarChart3,
   Settings,
@@ -29,6 +30,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'dashboard', label: 'ផ្ទាំងគ្រប់គ្រង', icon: LayoutDashboard },
       { id: 'daily-entry', label: 'បញ្ចូលទិន្នន័យថ្ងៃនេះ', icon: FilePlus },
       { id: 'reports', label: 'ប្រវត្តិរបាយការណ៍', icon: History },
+      { id: 'students', label: 'បញ្ជីឈ្មោះសិស្ស', icon: GraduationCap },
     ],
   },
   {

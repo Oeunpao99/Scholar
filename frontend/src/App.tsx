@@ -11,6 +11,7 @@ import { AnalyticsExportPage } from './pages/AnalyticsExportPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { UsersManagementPage } from './pages/UsersManagementPage'
 import { AuditLogsPage } from './pages/AuditLogsPage'
+import { StudentsPage } from './pages/StudentsPage'
 import { GraduationCap, RefreshCw } from 'lucide-react'
 
 export const App: React.FC = () => {
@@ -75,6 +76,8 @@ export const App: React.FC = () => {
         return <DailyReportEntryPage initialDate={tabParam} />
       case 'reports':
         return <ReportsHistoryPage onNavigate={handleNavigate} />
+      case 'students':
+        return <StudentsPage />
       case 'telegram':
         return <TelegramCenterPage initialDate={tabParam} onNavigate={handleNavigate} />
       case 'ai-assistant':

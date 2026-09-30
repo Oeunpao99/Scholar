@@ -10,6 +10,8 @@ import {
   Grade,
   PaginatedResponse,
   SeriesPoint,
+  Student,
+  StudentInput,
   TelegramMessage,
   User,
 } from '../types'
@@ -328,6 +330,35 @@ export const api = {
   },
 
   // Users
+  // Students
+  async getStudents(params: {
+    page?: number
+    size?: number
+    academic_year?: number
+    q?: string
+    gender?: string
+    grade?: string
+    stream?: string
+  }): Promise<PaginatedResponse<Student>> {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== '') q.append(k, String(v))
+    }
+    return request(`/students?${q.toString()}`)
+  },
+
+  async createStudent(payload: StudentInput): Promise<Student> {
+    return request('/students', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
+  async updateStudent(id: string, payload: Partial<StudentInput>): Promise<Student> {
+    return request(`/students/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+
+  async deleteStudent(id: string): Promise<void> {
+    return request(`/students/${id}`, { method: 'DELETE' })
+  },
+
   async getUsers(page: number = 1, size: number = 50): Promise<PaginatedResponse<User>> {
     return request(`/users?page=${page}&size=${size}`)
   },

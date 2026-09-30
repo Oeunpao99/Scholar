@@ -102,17 +102,19 @@ python -m venv .venv
 source .venv/bin/activate  # Or on Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 
-# Set test database and run migrations
-alembic upgrade head
+# Run migrations
+python -m alembic upgrade head
 
 # Run development server
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
+`python -m ...` runs each tool through the venv's Python. Use it on Windows when the
+`.venv\Scripts\*.exe` launchers are blocked ("Access is denied"), e.g. by device policy.
 
 ### Running Backend Tests
 ```bash
 cd backend
-pytest tests/
+python -m pytest tests/
 ```
 *Current test suite: **70 passed in 16.66s** (100% passing).*
 

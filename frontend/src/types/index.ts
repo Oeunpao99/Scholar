@@ -147,6 +147,31 @@ export interface DashboardResponse {
   has_report_today: boolean
 }
 
+// Mirrors backend app/schemas/student.py
+export type StudentGender = 'M' | 'F'
+export type StudentStream = 'science' | 'social_science'
+
+export interface Student {
+  id: string
+  academic_year: number
+  full_name: string
+  gender: StudentGender
+  grade?: 'A' | 'B' | 'C' | 'D' | 'E' | null
+  score_rank?: number | null
+  high_school?: string | null
+  stream?: StudentStream | null
+  university?: string | null
+  major?: string | null
+  phone?: string | null
+  note?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export type StudentInput = Omit<Student, 'id' | 'created_at' | 'updated_at' | 'academic_year'> & {
+  academic_year?: number
+}
+
 // /reports/cumulative/series — running totals plus that day's own gain.
 export interface SeriesPoint {
   date: string

@@ -961,6 +961,44 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .grade-scale-meaning { font-size: 0.78rem; color: var(--text-dim); }
 
 /* ─── Audit log ─── */
+/* ─── Student list ─── */
+.students-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.students-table th {
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  vertical-align: bottom;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.students-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--table-border);
+  color: var(--text-main);
+  vertical-align: top;
+}
+.students-table tbody tr:hover { background: var(--table-hover); }
+.students-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.students-table .center { text-align: center; white-space: nowrap; }
+.students-table .th-sub { display: block; font-weight: 400; font-size: 0.7rem; color: var(--text-dim); }
+.students-table .note-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.student-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+.student-form .span-2 { grid-column: span 2; }
+.student-form .span-4 { grid-column: 1 / -1; }
+.student-form textarea { resize: vertical; font-family: inherit; }
+.req { color: var(--rose-primary); }
+@media (max-width: 640px) {
+  .student-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .student-form .span-2 { grid-column: 1 / -1; }
+}
+
 .audit-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .audit-table th { text-align: left; padding: 10px 18px; }
 .audit-table td { padding: 12px 18px; vertical-align: top; }
