@@ -25,6 +25,7 @@ from app.services.dashboard_service import DashboardService
 from app.services.export_service import ExportService
 from app.services.report_service import DailyReportService
 from app.services.settings_service import SettingsService
+from app.services.student_service import StudentService
 from app.services.telegram_service import TelegramReportService
 from app.services.user_service import UserService
 
@@ -127,6 +128,10 @@ def get_user_service(session: DbSession, user: CurrentUser) -> UserService:
     return UserService(session, user)
 
 
+def get_student_service(session: DbSession, user: CurrentUser) -> StudentService:
+    return StudentService(session, user)
+
+
 def get_ai_service(session: DbSession, user: CurrentUser) -> AIExtractionService:
     return AIExtractionService(session, user)
 
@@ -165,6 +170,7 @@ __all__ = [
     "get_telegram_service",
     "get_export_service",
     "get_user_service",
+    "get_student_service",
     "get_ai_service",
     "get_backup_service",
     "get_cumulative_service",

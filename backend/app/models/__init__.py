@@ -14,6 +14,7 @@ from app.models.enums import (
 )
 from app.models.reference import AppSetting, Category, Grade
 from app.models.report import DailyGradeEntry, DailyReport, DailyTotalsSnapshot
+from app.models.student import Student
 from app.models.user import AuditLog, RefreshToken, User
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "DailyReport",
     "DailyGradeEntry",
     "DailyTotalsSnapshot",
+    "Student",
     "GradeLetter",
     "CategoryCode",
     "UserRole",
