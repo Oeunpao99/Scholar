@@ -47,9 +47,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Page Header */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+      <div className="page-header" style={{ alignItems: 'center' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <h1 className="page-title">
               ផ្ទាំងគ្រប់គ្រងទិន្នន័យចុះឈ្មោះ
             </h1>
@@ -63,9 +63,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         </div>
 
         {/* Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="page-actions dash-actions">
           {/* Date Selector */}
-          <div style={{
+          <div className="dash-date" style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
@@ -126,7 +126,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       )}
 
       {/* 4 Clean Metric Cards (No glowing orbs, no containers inside containers) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+      <div className="dash-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
         {/* Metric 1 */}
         <div className="glass-panel" style={{ padding: '18px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -185,8 +185,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       </div>
 
       {/* Clean Category Ledger Table (Replacing 3 bulky cards and 15 nested chips) */}
-      <div className="glass-panel" style={{ padding: '20px 24px', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+      <div className="glass-panel dash-ledger" style={{ padding: '20px 24px', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
           <div>
             <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>
               តារាងសង្ខេបតាមប្រភេទពាក្យស្នើសុំ
@@ -205,7 +205,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         </div>
 
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+          <table className="ledger-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
                 <th style={{ padding: '10px 12px', fontWeight: 600 }}>ប្រភេទពាក្យ</th>
@@ -225,7 +225,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--table-hover)'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
-                  <td style={{ padding: '14px 12px' }}>
+                  <td className="ledger-title" style={{ padding: '14px 12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span className="badge badge-blue" style={{ fontSize: '0.7rem' }}>
                         {cat.roman_numeral}
@@ -235,7 +235,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                       </span>
                     </div>
                   </td>
-                  <td style={{ padding: '14px 12px', textAlign: 'center' }}>
+                  <td data-label="ថ្ងៃនេះ" style={{ padding: '14px 12px', textAlign: 'center' }}>
                     <span style={{ fontWeight: 700, color: 'var(--sky-primary)' }}>
                       +{cat.today.total}
                     </span>
@@ -243,17 +243,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                       (ស្រី {cat.today.female})
                     </span>
                   </td>
-                  <td style={{ padding: '14px 12px', textAlign: 'center', fontWeight: 600, color: 'var(--text-main)' }}>
+                  <td data-label="ខែនេះ" style={{ padding: '14px 12px', textAlign: 'center', fontWeight: 600, color: 'var(--text-main)' }}>
                     {cat.month.total}
                   </td>
-                  <td style={{ padding: '14px 12px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td data-label="ភ្នំពេញ" style={{ padding: '14px 12px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     {cat.cumulative.pp}
                   </td>
-                  <td style={{ padding: '14px 12px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td data-label="ខេត្ត" style={{ padding: '14px 12px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     {cat.cumulative.kp}
                   </td>
-                  <td style={{ padding: '14px 12px' }}>
-                    <div style={{ display: 'flex', gap: '10px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  <td className="ledger-grades" style={{ padding: '14px 12px' }}>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                       {['A', 'B', 'C', 'D', 'E'].map((g) => {
                         const count = cat.cumulative_grades?.[g]?.total || 0
                         return (
@@ -265,7 +265,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                       })}
                     </div>
                   </td>
-                  <td style={{ padding: '14px 12px', textAlign: 'right' }}>
+                  <td className="ledger-total" style={{ padding: '14px 12px', textAlign: 'right' }}>
                     <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-sans)' }}>
                       {cat.cumulative.total.toLocaleString()}
                     </span>

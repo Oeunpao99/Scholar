@@ -344,7 +344,7 @@ export const ReportsHistoryPage: React.FC<ReportsHistoryPageProps> = ({ onNaviga
               {(detail.grades || []).length === 0 ? (
                 <div className="audit-entity">គ្មានការបែងចែកតាមនិទ្ទេស</div>
               ) : (
-                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'auto' }}>
                   <table className="result-table">
                     <thead><tr><th style={{ textAlign: 'left' }}>និទ្ទេស</th><th>សរុប</th><th>ស្រី</th><th>ភ្នំពេញ</th><th>ខេត្ត</th></tr></thead>
                     <tbody>
@@ -391,7 +391,7 @@ export const ReportsHistoryPage: React.FC<ReportsHistoryPageProps> = ({ onNaviga
               <button onClick={() => setEditing(null)} className="btn btn-ghost" aria-label="បិទ"><X size={18} /></button>
             </div>
 
-            <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'auto' }}>
               <table className="entry-grid" style={{ width: '100%' }}>
                 <thead>
                   <tr><th style={{ textAlign: 'left' }}>និទ្ទេស</th><th>ចំនួន</th><th>ស្រី</th><th>ភ្នំពេញ (PP)</th><th className="entry-total-col">ខេត្ត (KP)</th></tr>

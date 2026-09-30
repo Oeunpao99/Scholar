@@ -220,7 +220,7 @@ export const AuditLogsPage: React.FC = () => {
                 <div style={{ marginTop: '18px' }}>
                   <h3 style={{ fontSize: '0.875rem', marginBottom: '8px' }}>{rows ? 'អ្វីដែលបានផ្លាស់ប្តូរ' : 'ព័ត៌មានលម្អិត'}</h3>
                   {rows ? (
-                    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'auto' }}>
                       <table className="result-table" style={{ fontSize: '0.85rem' }}>
                         <thead>
                           <tr>
