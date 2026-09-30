@@ -12,6 +12,7 @@ import {
   SeriesPoint,
   Student,
   StudentExtraction,
+  StudentImportResult,
   StudentInput,
   TelegramMessage,
   User,
@@ -301,6 +302,46 @@ export const api = {
     return res.blob()
   },
 
+  async exportStudents(params: {
+    format?: 'word' | 'excel' | 'pdf'
+    academic_year?: number
+    q?: string
+    gender?: string
+    grade?: string
+    stream?: string
+  }): Promise<{ blob: Blob; filename: string }> {
+    const token = localStorage.getItem('scholar_token')
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    const searchParams = new URLSearchParams()
+    if (params.format) searchParams.set('format', params.format)
+    if (params.academic_year) searchParams.set('academic_year', String(params.academic_year))
+    if (params.q) searchParams.set('q', params.q)
+    if (params.gender) searchParams.set('gender', params.gender)
+    if (params.grade) searchParams.set('grade', params.grade)
+    if (params.stream) searchParams.set('stream', params.stream)
+
+    const res = await fetch(`${BASE_URL}/students/export?${searchParams.toString()}`, {
+      method: 'GET',
+      headers,
+    })
+
+    if (!res.ok) {
+      throw new Error(`ការនាំចេញទិន្នន័យសិស្សមិនបានសម្រេច (${res.status})`)
+    }
+
+    const disposition = res.headers.get('Content-Disposition') || ''
+    let filename = `students_${params.academic_year || 2026}.${params.format === 'excel' ? 'xlsx' : params.format === 'pdf' ? 'pdf' : 'docx'}`
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    if (match && match[1]) {
+      filename = match[1]
+    }
+
+    const blob = await res.blob()
+    return { blob, filename }
+  },
+
   // Settings
   async getSettings(): Promise<AppSetting[]> {
     return request('/settings')
@@ -365,6 +406,14 @@ export const api = {
     const body = new FormData()
     body.append('file', file)
     return request('/students/extract', { method: 'POST', body, signal })
+  },
+
+  /** Add students from a Word/Excel list. Valid rows are saved; the rest come back as errors. */
+  async importStudents(file: File, academicYear?: number): Promise<StudentImportResult> {
+    const body = new FormData()
+    body.append('file', file)
+    const qs = academicYear ? `?academic_year=${academicYear}` : ''
+    return request(`/students/import${qs}`, { method: 'POST', body })
   },
 
   /** The photo as a Blob. <img src> can't send the bearer token, so fetch it. */

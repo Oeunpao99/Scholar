@@ -288,3 +288,27 @@ async def test_student_changes_are_audited(api):
     await client.post("/api/v1/students", headers=headers, json=STUDENT)
     logs = (await client.get("/api/v1/audit", headers=headers)).json()["items"]
     assert any(i["entity_type"] == "student" and i["action"] == "create" for i in logs)
+
+
+@pytest.mark.asyncio
+async def test_export_students_endpoint(api):
+    client, headers = api
+    await client.post("/api/v1/students", headers=headers, json=STUDENT)
+
+    # Word export
+    resp_word = await client.get("/api/v1/students/export?format=word", headers=headers)
+    assert resp_word.status_code == 200
+    assert "wordprocessingml" in resp_word.headers["content-type"]
+    assert resp_word.content[:4] == b"PK\x03\x04"
+
+    # Excel export
+    resp_excel = await client.get("/api/v1/students/export?format=excel", headers=headers)
+    assert resp_excel.status_code == 200
+    assert "spreadsheetml" in resp_excel.headers["content-type"]
+    assert resp_excel.content[:4] == b"PK\x03\x04"
+
+    # PDF export
+    resp_pdf = await client.get("/api/v1/students/export?format=pdf", headers=headers)
+    assert resp_pdf.status_code == 200
+    assert resp_pdf.headers["content-type"] == "application/pdf"
+    assert resp_pdf.content[:4] == b"%PDF"

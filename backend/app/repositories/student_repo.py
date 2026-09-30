@@ -50,6 +50,11 @@ class StudentRepository(BaseRepository[Student]):
         stmt = stmt.order_by(Student.created_at.asc(), Student.id.asc()).offset(offset).limit(limit)
         return list((await self.session.scalars(stmt)).all()), total
 
+    async def identity_keys(self, academic_year: int) -> set[tuple[str, str]]:
+        """(name, gender) of every student in a year, to spot duplicates on import."""
+        stmt = select(Student.full_name, Student.gender).where(Student.academic_year == academic_year)
+        return {(name.casefold(), gender) for name, gender in (await self.session.execute(stmt)).all()}
+
     # --------------------------------------------------------------- photos
     async def photo_versions(self, student_ids: list[uuid.UUID]) -> dict[uuid.UUID, datetime]:
         """When each student's photo last changed - without loading the images."""

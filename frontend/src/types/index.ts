@@ -180,6 +180,12 @@ export interface StudentExtraction {
   photo?: string | null // JPEG data URL cropped from the form
 }
 
+export interface StudentImportResult {
+  created: number
+  duplicates: number
+  errors: { row: number; message: string }[]
+}
+
 export type StudentInput = Omit<Student, 'id' | 'created_at' | 'updated_at' | 'academic_year' | 'has_photo' | 'photo_version'> & {
   academic_year?: number
 }

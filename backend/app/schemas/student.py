@@ -81,6 +81,19 @@ class StudentExtraction(SchemaBase):
     )
 
 
+class StudentImportError(SchemaBase):
+    row: int
+    message: str
+
+
+class StudentImportResult(SchemaBase):
+    """Outcome of importing a Word/Excel student list."""
+
+    created: int = 0
+    duplicates: int = 0
+    errors: list[StudentImportError] = Field(default_factory=list)
+
+
 class StudentRead(SchemaBase):
     id: str
     academic_year: int

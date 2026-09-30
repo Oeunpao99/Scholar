@@ -15,12 +15,20 @@ from app.models.student import Student, StudentPhoto
 from app.models.user import User
 from app.repositories.student_repo import StudentRepository
 from app.schemas.common import Page, PageMeta
-from app.schemas.student import StudentCreate, StudentExtraction, StudentRead, StudentUpdate
+from app.schemas.student import (
+    StudentCreate,
+    StudentExtraction,
+    StudentImportError,
+    StudentImportResult,
+    StudentRead,
+    StudentUpdate,
+)
 from app.services.ai.documents import load_document
 from app.services.ai.ocr import OcrService
 from app.services.ai.photo import extract_student_photo, normalize_uploaded_photo
 from app.services.ai.student_extractor import extract_student_fields
 from app.services.audit_service import AuditService
+from app.services.student_import import parse_student_list
 from app.services.settings_service import SettingsService
 
 
@@ -63,6 +71,116 @@ class StudentService:
                 has_prev=page > 1,
             ),
         )
+
+    async def export(
+        self,
+        *,
+        export_format: str = "word",
+        academic_year: int | None = None,
+        q: str | None = None,
+        gender: str | None = None,
+        grade: str | None = None,
+        stream: str | None = None,
+    ) -> tuple[bytes, str, str]:
+        """Export matching students as Word (.docx), Excel (.xlsx), or PDF (.pdf)."""
+        from datetime import date
+        from app.services.student_export import (
+            export_students_docx,
+            export_students_xlsx,
+            export_students_pdf,
+        )
+
+        students, total = await self.repo.search(
+            academic_year=academic_year,
+            q=q,
+            gender=gender,
+            grade=grade,
+            stream=stream,
+            limit=10000,
+            offset=0,
+        )
+
+        institution = "ប្រព័ន្ធគ្រប់គ្រងអាហារូបករណ៍"
+        try:
+            settings_dict = await self.settings.get_all()
+            if settings_dict.get("institution_name"):
+                institution = str(settings_dict["institution_name"])
+        except Exception:
+            pass
+
+        year = academic_year or (await self.settings.get_current_year())
+        fmt = export_format.lower()
+
+        if fmt in ("word", "docx"):
+            payload = await run_in_threadpool(
+                export_students_docx, students, academic_year=year, institution=institution
+            )
+            ext = "docx"
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif fmt in ("excel", "xlsx"):
+            payload = await run_in_threadpool(
+                export_students_xlsx, students, academic_year=year, institution=institution
+            )
+            ext = "xlsx"
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif fmt == "pdf":
+            payload = await run_in_threadpool(
+                export_students_pdf, students, academic_year=year, institution=institution
+            )
+            ext = "pdf"
+            media_type = "application/pdf"
+        else:
+            raise ValidationError(f"Unsupported export format: {export_format}")
+
+        today = date.today().isoformat()
+        filename = f"students_{year}_{today}.{ext}"
+
+        await self.audit.log(
+            action=AuditAction.EXPORT,
+            entity_type="student",
+            summary=f"Exported {len(students)} student(s) as {ext.upper()}",
+            user=self.actor,
+        )
+        await self.session.commit()
+        return payload, filename, media_type
+
+    async def import_from_file(self, data: bytes, academic_year: int | None = None) -> StudentImportResult:
+        """Add every valid row of a Word/Excel student list; bad rows are reported, not fatal."""
+        from pydantic import ValidationError as PydanticError
+
+        parsed = await run_in_threadpool(parse_student_list, data)
+        year = academic_year or await self.settings.get_current_year()
+        seen = await self.repo.identity_keys(year)
+        result = StudentImportResult(
+            errors=[StudentImportError(row=r, message=m) for r, m in parsed.errors]
+        )
+        for item in parsed.rows:
+            try:
+                payload = StudentCreate(**item.values, academic_year=year)
+            except PydanticError as exc:
+                first = exc.errors()[0]
+                field = ".".join(str(p) for p in first["loc"])
+                result.errors.append(StudentImportError(row=item.row, message=f"{field}: {first['msg']}"))
+                continue
+            key = (payload.full_name.casefold(), payload.gender)
+            if key in seen:
+                result.duplicates += 1
+                continue
+            seen.add(key)
+            self.repo.add(Student(**payload.model_dump(), created_by=self.actor.id if self.actor else None))
+            result.created += 1
+
+        if result.created:
+            await self.session.flush()
+            await self.audit.log(
+                action=AuditAction.CREATE,
+                entity_type="student",
+                summary=f"Imported {result.created} student(s) from a file",
+                user=self.actor,
+            )
+            await self.session.commit()
+        result.errors.sort(key=lambda e: e.row)
+        return result
 
     async def extract_from_file(self, data: bytes, filename: str | None = None) -> StudentExtraction:
         """OCR an application form and read the student fields out of it."""

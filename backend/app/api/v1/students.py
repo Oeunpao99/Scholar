@@ -17,6 +17,7 @@ from app.schemas.student import (
     Stream,
     StudentCreate,
     StudentExtraction,
+    StudentImportResult,
     StudentRead,
     StudentUpdate,
 )
@@ -51,6 +52,35 @@ async def list_students(
     return Page(items=await service.to_read(page.items), meta=page.meta)
 
 
+@router.get("/export", summary="Export students list as Word (.docx), Excel (.xlsx), or PDF (.pdf)")
+async def export_students(
+    service: Annotated[StudentService, Depends(get_student_service)],
+    user: CurrentUser,
+    format: Annotated[str, Query(pattern="^(word|docx|excel|xlsx|pdf)$")] = "word",
+    academic_year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+    q: Annotated[str | None, Query(max_length=120)] = None,
+    gender: Gender | None = None,
+    grade: GradeCode | None = None,
+    stream: Stream | None = None,
+) -> Response:
+    payload, filename, media_type = await service.export(
+        export_format=format,
+        academic_year=academic_year,
+        q=q,
+        gender=gender,
+        grade=grade,
+        stream=stream,
+    )
+    return Response(
+        content=payload,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
 @router.post(
     "/extract",
     response_model=StudentExtraction,
@@ -62,6 +92,20 @@ async def extract_student(
     actor: RequireStaff,
 ) -> StudentExtraction:
     return await service.extract_from_file(await _read_upload(file), filename=file.filename)
+
+
+@router.post(
+    "/import",
+    response_model=StudentImportResult,
+    summary="Add students from a Word (.docx) or Excel (.xlsx) list",
+)
+async def import_students(
+    file: Annotated[UploadFile, File(description="A .docx table or .xlsx sheet with a header row")],
+    service: Annotated[StudentService, Depends(get_student_service)],
+    actor: RequireStaff,
+    academic_year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+) -> StudentImportResult:
+    return await service.import_from_file(await _read_upload(file), academic_year=academic_year)
 
 
 @router.get("/{student_id}", response_model=StudentRead, summary="Fetch a student")

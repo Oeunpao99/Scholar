@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
   Search, RefreshCw, Pencil, Trash2, UserPlus, ChevronLeft, ChevronRight, X, Save, AlertTriangle, GraduationCap,
-  ScanText, FileText, Check, Loader,
+  ScanText, FileText, Check, Loader, Download, FileSpreadsheet,
 } from 'lucide-react'
 import { api } from '../lib/api'
-import { PaginatedResponse, Student, StudentExtraction, StudentInput } from '../types'
+import { PaginatedResponse, Student, StudentExtraction, StudentImportResult, StudentInput } from '../types'
 import { useAuth } from '../context/AuthContext'
 import { StudentPhoto } from '../components/StudentPhoto'
 
@@ -167,11 +167,33 @@ export const StudentsPage: React.FC = () => {
   const fieldClass = (key: string) => (scan?.result.found.includes(key) ? 'input-field prefilled' : 'input-field')
 
   const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+  const isList = (f: File) => /\.(docx|xlsx)$/i.test(f.name)
+
+  // A .docx/.xlsx is a whole list to import; anything else is one application form to scan.
+  const handleFile = (file: File) => (isList(file) ? importList(file) : scanFile(file))
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = '' // allow picking the same file again
-    if (file) scanFile(file)
+    if (file) handleFile(file)
+  }
+
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<(StudentImportResult & { name: string }) | null>(null)
+
+  const importList = async (file: File) => {
+    setImporting(true)
+    setScanError(null)
+    setImportResult(null)
+    try {
+      const result = await api.importStudents(file, year ?? undefined)
+      setImportResult({ ...result, name: file.name })
+      if (result.created) fetchStudents()
+    } catch (err: any) {
+      setScanError(`នាំចូលមិនបាន: ${err.message}`)
+    } finally {
+      setImporting(false)
+    }
   }
 
   // Drag & drop anywhere on the page. The counter survives dragenter/leave
@@ -179,7 +201,7 @@ export const StudentsPage: React.FC = () => {
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
   const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
-  const dropEnabled = canEdit && !scanning && !(formFor && formFor !== 'new')
+  const dropEnabled = canEdit && !scanning && !importing && !(formFor && formFor !== 'new')
 
   const onDragEnter = (e: React.DragEvent) => {
     if (!dropEnabled || !hasFiles(e)) return
@@ -203,8 +225,8 @@ export const StudentsPage: React.FC = () => {
     dragDepth.current = 0
     setDragging(false)
     const files = Array.from(e.dataTransfer.files)
-    if (files.length > 1) setScanError('សូមទម្លាក់ឯកសារម្តងមួយ (សិស្សម្នាក់ក្នុងមួយឯកសារ)')
-    if (files[0]) scanFile(files[0])
+    if (files.length > 1) setScanError('សូមទម្លាក់ឯកសារម្តងមួយ')
+    if (files[0]) handleFile(files[0])
   }
 
   const scanFile = async (file: File) => {
@@ -291,6 +313,52 @@ export const StudentsPage: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const [exporting, setExporting] = useState<'word' | 'excel' | 'pdf' | null>(null)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false)
+      }
+    }
+    if (exportMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [exportMenuOpen])
+
+  const handleExport = async (fmt: 'word' | 'excel' | 'pdf') => {
+    setExportMenuOpen(false)
+    setExporting(fmt)
+    try {
+      const { blob, filename } = await api.exportStudents({
+        format: fmt,
+        academic_year: year ?? undefined,
+        q: search || undefined,
+        gender: gender || undefined,
+        grade: grade || undefined,
+        stream: stream || undefined,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setNotice(`បានទាញយកឯកសារ «${filename}» ដោយជោគជ័យ`)
+    } catch (err: any) {
+      setScanError(err.message || 'ការនាំចេញមិនបានសម្រេច')
+    } finally {
+      setExporting(null)
+    }
+  }
+
   const openAdd = () => { clearScan(); resetPhoto(); setForm(EMPTY_FORM); setFormError(null); setFormFor('new') }
   const openEdit = (s: Student) => { clearScan(); resetPhoto(); setForm(toForm(s)); setFormError(null); setFormFor(s) }
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -367,7 +435,7 @@ export const StudentsPage: React.FC = () => {
           <div className="drop-overlay-card">
             <ScanText size={36} />
             <strong>ទម្លាក់ពាក្យស្នើសុំនៅទីនេះ</strong>
-            <span>JPG, PNG, WebP ឬ PDF · សិស្សម្នាក់ក្នុងមួយឯកសារ</span>
+            <span>JPG, PNG, WebP, PDF (សិស្សម្នាក់) · Word/Excel (បញ្ជីទាំងមូល)</span>
           </div>
         </div>
       )}
@@ -404,14 +472,72 @@ export const StudentsPage: React.FC = () => {
           <button onClick={fetchStudents} className="btn btn-ghost" aria-label="ផ្ទុកឡើងវិញ" title="ផ្ទុកឡើងវិញ">
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
+
+          <div ref={exportMenuRef} style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setExportMenuOpen((v) => !v)}
+              className="btn btn-secondary"
+              disabled={exporting !== null}
+              title="នាំចេញបញ្ជីឈ្មោះសិស្ស"
+            >
+              {exporting ? <RefreshCw size={16} className="spin" /> : <Download size={16} />}
+              {exporting ? 'កំពុងនាំចេញ…' : 'នាំចេញ'}
+            </button>
+            {exportMenuOpen && (
+              <div
+                className="glass-panel"
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 'calc(100% + 6px)',
+                  zIndex: 50,
+                  minWidth: 195,
+                  padding: '6px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                  boxShadow: '0 12px 28px rgba(0, 0, 0, 0.25)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleExport('word')}
+                  className="btn btn-ghost"
+                  style={{ justifyContent: 'flex-start', gap: 8, padding: '8px 12px', fontSize: '0.85rem' }}
+                >
+                  <FileText size={16} style={{ color: '#2563eb' }} />
+                  <span>ឯកសារ Word (.docx)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport('excel')}
+                  className="btn btn-ghost"
+                  style={{ justifyContent: 'flex-start', gap: 8, padding: '8px 12px', fontSize: '0.85rem' }}
+                >
+                  <FileSpreadsheet size={16} style={{ color: '#16a34a' }} />
+                  <span>ឯកសារ Excel (.xlsx)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport('pdf')}
+                  className="btn btn-ghost"
+                  style={{ justifyContent: 'flex-start', gap: 8, padding: '8px 12px', fontSize: '0.85rem' }}
+                >
+                  <FileText size={16} style={{ color: '#dc2626' }} />
+                  <span>ឯកសារ PDF (.pdf)</span>
+                </button>
+              </div>
+            )}
+          </div>
           {canEdit && (
             <>
-              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf"
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.docx,.xlsx"
                 onChange={onFile} hidden aria-hidden="true" />
-              <button onClick={() => fileRef.current?.click()} className="btn btn-secondary" disabled={scanning}
-                title="ជ្រើស ឬអូសទម្លាក់ពាក្យស្នើសុំ (JPG, PNG, PDF) — ប្រព័ន្ធនឹងអានព័ត៌មានឲ្យ">
-                {scanning ? <RefreshCw size={16} className="spin" /> : <ScanText size={16} />}
-                {scanning ? 'កំពុងអានឯកសារ…' : 'បញ្ចូលពីឯកសារ'}
+              <button onClick={() => fileRef.current?.click()} className="btn btn-secondary" disabled={scanning || importing}
+                title="ជ្រើស ឬអូសទម្លាក់ពាក្យស្នើសុំ (JPG, PNG, PDF) ឬបញ្ជីសិស្ស Word (.docx) / Excel (.xlsx)">
+                {scanning || importing ? <RefreshCw size={16} className="spin" /> : <ScanText size={16} />}
+                {scanning ? 'កំពុងអានឯកសារ…' : importing ? 'កំពុងនាំចូល…' : 'បញ្ចូលពីឯកសារ'}
               </button>
               <button onClick={openAdd} className="btn btn-primary">
                 <UserPlus size={16} /> បន្ថែមសិស្ស
@@ -426,6 +552,27 @@ export const StudentsPage: React.FC = () => {
           <AlertTriangle size={15} />
           <span style={{ flex: 1 }}>{scanError}</span>
           <button className="btn btn-ghost" style={{ padding: 2 }} onClick={() => setScanError(null)} aria-label="បិទ"><X size={14} /></button>
+        </div>
+      )}
+
+      {importResult && (
+        <div role="status" className={`notice ${importResult.created ? 'notice-emerald' : 'notice-amber'}`} style={{ alignItems: 'flex-start' }}>
+          <FileSpreadsheet size={15} style={{ marginTop: 3, flexShrink: 0 }} />
+          <div style={{ flex: 1, lineHeight: 1.6 }}>
+            <strong>{importResult.name}</strong>: បានបន្ថែម {importResult.created} នាក់
+            {importResult.duplicates > 0 && ` · រំលងស្ទួន ${importResult.duplicates}`}
+            {importResult.errors.length > 0 && ` · មានបញ្ហា ${importResult.errors.length} ជួរ`}
+            {importResult.errors.length > 0 && (
+              <details>
+                <summary style={{ cursor: 'pointer' }}>មើលជួរដែលមានបញ្ហា</summary>
+                <ul style={{ margin: '4px 0 0 18px' }}>
+                  {importResult.errors.slice(0, 50).map((e) => <li key={`${e.row}-${e.message}`}>ជួរទី {e.row}: {e.message}</li>)}
+                  {importResult.errors.length > 50 && <li>… និង {importResult.errors.length - 50} ទៀត</li>}
+                </ul>
+              </details>
+            )}
+          </div>
+          <button className="btn btn-ghost" style={{ padding: 2 }} onClick={() => setImportResult(null)} aria-label="បិទ"><X size={14} /></button>
         </div>
       )}
 
