@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react'
 import {
   Search, RefreshCw, Pencil, Trash2, AlertTriangle, FilePlus, Send, ChevronLeft, ChevronRight, X, Save, History,
 } from 'lucide-react'
+import { SelectMenu } from '../components/ui/SelectMenu'
 import { api } from '../lib/api'
-import { daysAgo, formatCategory, khDate, localISODate, monthStart } from '../lib/format'
+import { daysAgo, formatCategory, formatRoman, khDate, localISODate, monthStart } from '../lib/format'
 import { Category, DailyReport, GradeEntry, PaginatedResponse } from '../types'
 import { useAuth } from '../context/AuthContext'
+import { DatePicker } from '../components/ui/DatePicker'
 
 interface ReportsHistoryPageProps {
   onNavigate: (tab: string, dateParam?: string) => void
@@ -188,39 +190,44 @@ export const ReportsHistoryPage: React.FC<ReportsHistoryPageProps> = ({ onNaviga
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div className="page-header">
+      <div className="page-header page-header-inline">
         <div>
           <h1 className="page-title">ប្រវត្តិរបាយការណ៍</h1>
-          <p className="page-subtitle">របាយការណ៍ប្រចាំថ្ងៃទាំងអស់ — ចុចលើជួរដើម្បីមើលលម្អិត</p>
+          <p className="page-subtitle hide-phone">របាយការណ៍ប្រចាំថ្ងៃទាំងអស់ — ចុចលើជួរដើម្បីមើលលម្អិត</p>
         </div>
         <div className="page-actions">
           <button onClick={fetchReports} className="btn btn-ghost" aria-label="ផ្ទុកឡើងវិញ" title="ផ្ទុកឡើងវិញ">
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
-          <button onClick={() => onNavigate('daily-entry')} className="btn btn-primary">
+          <button onClick={() => onNavigate('daily-entry')} className="btn btn-primary hide-phone">
             <FilePlus size={16} /> បញ្ចូលទិន្នន័យថ្មី
           </button>
         </div>
       </div>
 
-      {/* Filters — one plain row */}
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Filters — one plain row (a tidy grid on phones) */}
+      <div className="history-filters" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
         <div className="preset-group" role="group" aria-label="ចន្លោះពេល">
           {([['all', 'ទាំងអស់'], ['7d', '៧ ថ្ងៃ'], ['30d', '៣០ ថ្ងៃ'], ['month', 'ខែនេះ']] as Array<[Preset, string]>).map(([p, label]) => (
             <button key={p} className={preset === p ? 'active' : ''} aria-pressed={preset === p} onClick={() => applyPreset(p)}>{label}</button>
           ))}
         </div>
-        <input type="date" className="input-field" style={{ width: 'auto' }} value={startDate} max={endDate || undefined}
-          aria-label="ចាប់ពីថ្ងៃ" onChange={(e) => { setStartDate(e.target.value); setPreset('custom'); setPage(1) }} />
-        <span style={{ color: 'var(--text-dim)' }}>–</span>
-        <input type="date" className="input-field" style={{ width: 'auto' }} value={endDate} min={startDate || undefined}
-          aria-label="ដល់ថ្ងៃ" onChange={(e) => { setEndDate(e.target.value); setPreset('custom'); setPage(1) }} />
-        <select className="input-field" style={{ width: 'auto', maxWidth: '280px' }} value={categoryCode}
-          aria-label="ផ្នែក" onChange={(e) => { setCategoryCode(e.target.value); setPage(1) }}>
-          <option value="">គ្រប់ផ្នែក</option>
-          {categories.map((c) => <option key={c.id} value={c.code}>{formatCategory(c.roman_numeral, c.title)}</option>)}
-        </select>
-        <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: '300px' }}>
+        <DatePicker clearable placeholder="ចាប់ពីថ្ងៃ" ariaLabel="ចាប់ពីថ្ងៃ" value={startDate} max={endDate || undefined}
+          onChange={(v) => { setStartDate(v); setPreset('custom'); setPage(1) }} />
+        <span className="history-dash" style={{ color: 'var(--text-dim)' }}>–</span>
+        <DatePicker clearable placeholder="ដល់ថ្ងៃ" ariaLabel="ដល់ថ្ងៃ" value={endDate} min={startDate || undefined}
+          onChange={(v) => { setEndDate(v); setPreset('custom'); setPage(1) }} />
+        <SelectMenu
+          className="history-category"
+          ariaLabel="ផ្នែក"
+          value={categoryCode}
+          onChange={(v) => { setCategoryCode(v); setPage(1) }}
+          options={[
+            { value: '', label: 'គ្រប់ផ្នែក' },
+            ...categories.map((c) => ({ value: c.code, prefix: formatRoman(c.roman_numeral), label: c.title })),
+          ]}
+        />
+        <div className="history-search" style={{ position: 'relative', flex: '1 1 200px', maxWidth: '300px' }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
           <input type="search" className="input-field" placeholder="ស្វែងរកកំណត់សម្គាល់…" value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)} style={{ paddingLeft: '36px' }} aria-label="ស្វែងរក" />
@@ -304,10 +311,9 @@ export const ReportsHistoryPage: React.FC<ReportsHistoryPageProps> = ({ onNaviga
               ទំព័រ {data.meta.page} នៃ {data.meta.total_pages || 1} · សរុប {data.meta.total} របាយការណ៍
             </span>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <select className="input-field" style={{ width: 'auto', padding: '5px 8px', fontSize: '0.8rem' }} value={size}
-                onChange={(e) => { setSize(Number(e.target.value)); setPage(1) }} aria-label="ចំនួនក្នុងមួយទំព័រ">
-                {[15, 30, 50].map((n) => <option key={n} value={n}>{n} / ទំព័រ</option>)}
-              </select>
+              <SelectMenu ariaLabel="ចំនួនក្នុងមួយទំព័រ" className="select-menu-sm" placement="up" value={String(size)}
+                onChange={(v) => { setSize(Number(v)); setPage(1) }}
+                options={[15, 30, 50].map((n) => ({ value: String(n), label: `${n} / ទំព័រ` }))} />
               <button disabled={!data.meta.has_prev} onClick={() => setPage((p) => Math.max(1, p - 1))} className="btn btn-secondary btn-sm"><ChevronLeft size={15} /> ថយក្រោយ</button>
               <button disabled={!data.meta.has_next} onClick={() => setPage((p) => p + 1)} className="btn btn-secondary btn-sm">ទៅមុខ <ChevronRight size={15} /></button>
             </div>

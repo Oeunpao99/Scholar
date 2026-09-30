@@ -5,6 +5,7 @@ import { formatRoman } from '../lib/format'
 import { Category, Grade } from '../types'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { Segmented } from '../components/ui/Segmented'
 
 // Meaning of each BacII grade (the seeded DB labels are misspelt, so the page
 // always shows "និទ្ទេស X" plus this description instead).
@@ -129,14 +130,16 @@ export const SettingsPage: React.FC = () => {
             <h2>រូបរាង</h2>
             <p>ផ្ទៃពន្លឺសម្រាប់ពេលថ្ងៃ ឬផ្ទៃងងឹតស្រទន់ភ្នែក</p>
           </div>
-          <div className="segmented" role="radiogroup" aria-label="រូបរាង">
-            <button role="radio" aria-checked={theme === 'light'} className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}>
-              <Sun size={15} /> ពន្លឺ
-            </button>
-            <button role="radio" aria-checked={theme === 'dark'} className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}>
-              <Moon size={15} /> ងងឹត
-            </button>
-          </div>
+          <Segmented
+            ariaLabel="រូបរាង"
+            className="theme-toggle"
+            value={theme}
+            onChange={(v) => setTheme(v as 'light' | 'dark')}
+            options={[
+              { value: 'light', label: <><Sun size={15} /> ពន្លឺ</> },
+              { value: 'dark', label: <><Moon size={15} /> ងងឹត</> },
+            ]}
+          />
         </div>
 
         {/* Academic year */}
@@ -201,6 +204,16 @@ export const SettingsPage: React.FC = () => {
                       </div>
                       <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
                         នឹងបង្ហាញជា: <strong style={{ color: 'var(--text-main)' }}>{renderTemplate(editing.template)}</strong>
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <code style={{ padding: '0 5px', borderRadius: 4, background: 'var(--bg-subtle)' }}>{'{year}'}</code>
+                        ប្តូរជាឆ្នាំសិក្សា ({savedYear}) ដោយស្វ័យប្រវត្តិ
+                        {!editing.template.includes('{year}') && (
+                          <button type="button" className="link-button" style={{ fontSize: '0.75rem' }}
+                            onClick={() => setEditing({ ...editing, template: `${editing.template}{year}` })}>
+                            + បញ្ចូល {'{year}'}
+                          </button>
+                        )}
                       </span>
                     </div>
                   ) : (

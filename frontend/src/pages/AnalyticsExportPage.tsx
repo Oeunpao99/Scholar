@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import { Download, FileSpreadsheet, FileText, FileCode, Send, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
 import { api } from '../lib/api'
-import { daysAgo, formatCategory, khDate, localISODate, monthStart } from '../lib/format'
+import { daysAgo, formatCategory, formatRoman, khDate, localISODate, monthStart } from '../lib/format'
 import { Category, Counters, SeriesPoint } from '../types'
 import { DailyGainBars } from '../components/charts/DailyGainBars'
 import { GradeDonut } from '../components/charts/GradeDonut'
+import { CategoryGain, CategoryGenderBars } from '../components/charts/CategoryGenderBars'
+import { GenderSplit } from '../components/charts/GenderSplit'
+import { SelectMenu } from '../components/ui/SelectMenu'
+import { DatePicker } from '../components/ui/DatePicker'
 
 type Preset = '7d' | '30d' | 'month' | 'custom'
 type ExportFormat = 'excel' | 'pdf' | 'csv' | 'telegram'
@@ -17,6 +21,18 @@ const EXPORTS: Array<{ format: ExportFormat; label: string; ext: string; icon: t
 ]
 
 const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0)
+
+/** Students gained over a series (not all-time). */
+const sumGains = (points: SeriesPoint[]) =>
+  points.reduce(
+    (acc, p) => ({
+      total: acc.total + (p.gain?.total || 0),
+      female: acc.female + (p.gain?.female || 0),
+      pp: acc.pp + (p.gain?.pp || 0),
+      kp: acc.kp + (p.gain?.kp || 0),
+    }),
+    { total: 0, female: 0, pp: 0, kp: 0 }
+  )
 
 export const AnalyticsExportPage: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([])
@@ -44,13 +60,24 @@ export const AnalyticsExportPage: React.FC = () => {
       .catch((err) => console.error('Failed to load initial export meta', err))
   }, [])
 
+  const [categoryGains, setCategoryGains] = useState<CategoryGain[]>([])
+
   const load = async () => {
     setLoading(true)
     setLoadError(null)
     try {
-      const res = await api.getCumulativeSeries(startDate || undefined, endDate || undefined, categoryId || undefined)
+      // The category chart always shows every category (the filter only highlights one),
+      // so fetch each category's series alongside the filtered one.
+      const [res, perCategory] = await Promise.all([
+        api.getCumulativeSeries(startDate || undefined, endDate || undefined, categoryId || undefined),
+        Promise.all(categories.map((c) => api.getCumulativeSeries(startDate || undefined, endDate || undefined, c.id))),
+      ])
       setPoints(res.points)
       setGrades(res.grades || {})
+      setCategoryGains(categories.map((c, i) => {
+        const g = sumGains(perCategory[i].points)
+        return { id: c.id, roman: c.roman_numeral, title: c.title, ...g }
+      }))
     } catch (err: any) {
       setLoadError(err.message || 'បរាជ័យក្នុងការផ្ទុកទិន្នន័យ')
     } finally {
@@ -60,7 +87,7 @@ export const AnalyticsExportPage: React.FC = () => {
 
   useEffect(() => {
     load()
-  }, [startDate, endDate, categoryId])
+  }, [startDate, endDate, categoryId, categories])
 
   const applyPreset = (p: Preset) => {
     setPreset(p)
@@ -97,15 +124,7 @@ export const AnalyticsExportPage: React.FC = () => {
   }
 
   // Range figures: students gained between the two dates (not all-time).
-  const gained = points.reduce(
-    (acc, p) => ({
-      total: acc.total + (p.gain?.total || 0),
-      female: acc.female + (p.gain?.female || 0),
-      pp: acc.pp + (p.gain?.pp || 0),
-      kp: acc.kp + (p.gain?.kp || 0),
-    }),
-    { total: 0, female: 0, pp: 0, kp: 0 }
-  )
+  const gained = sumGains(points)
   const cumulativeEnd = points.length > 0 ? points[points.length - 1].total : 0
   const activeDays = points.filter((p) => (p.gain?.total || 0) > 0)
   const selectedCategory = categories.find((c) => c.id === categoryId)
@@ -113,19 +132,19 @@ export const AnalyticsExportPage: React.FC = () => {
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div className="page-header">
+      <div className="page-header page-header-inline">
         <div>
           <h1 className="page-title">ការវិភាគ និងនាំចេញ</h1>
-          <p className="page-subtitle">តាមដានចំនួនសិស្សចុះឈ្មោះប្រចាំថ្ងៃ និងការបែងចែកតាមនិទ្ទេស</p>
+          <p className="page-subtitle hide-phone">តាមដានចំនួនសិស្សចុះឈ្មោះប្រចាំថ្ងៃ និងការបែងចែកតាមនិទ្ទេស</p>
         </div>
-        <button onClick={load} className="btn btn-secondary btn-sm" disabled={loading}>
+        <button onClick={load} className="btn btn-secondary btn-sm an-refresh" disabled={loading}>
           <RefreshCw size={14} className={loading ? 'spin' : ''} />
-          ផ្ទុកឡើងវិញ
+          <span className="hide-phone">ផ្ទុកឡើងវិញ</span>
         </button>
       </div>
 
       {/* Filters — one row above the charts; they drive charts AND exports. */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
+      <div className="an-filters" style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
         <div className="preset-group" role="group" aria-label="ចន្លោះពេល">
           {([['7d', '៧ ថ្ងៃ'], ['30d', '៣០ ថ្ងៃ'], ['month', 'ខែនេះ']] as Array<[Preset, string]>).map(([p, label]) => (
             <button key={p} className={preset === p ? 'active' : ''} aria-pressed={preset === p} onClick={() => applyPreset(p)}>
@@ -133,25 +152,28 @@ export const AnalyticsExportPage: React.FC = () => {
             </button>
           ))}
         </div>
-        <label className="input-group">
+        <div className="input-group">
           <span className="input-label">ចាប់ពី</span>
-          <input type="date" className="input-field" style={{ width: 'auto' }} value={startDate} max={endDate}
-            onChange={(e) => { setStartDate(e.target.value); setPreset('custom') }} />
-        </label>
-        <label className="input-group">
+          <DatePicker ariaLabel="ចាប់ពី" value={startDate} max={endDate}
+            onChange={(v) => { setStartDate(v); setPreset('custom') }} />
+        </div>
+        <div className="input-group">
           <span className="input-label">ដល់</span>
-          <input type="date" className="input-field" style={{ width: 'auto' }} value={endDate} min={startDate}
-            onChange={(e) => { setEndDate(e.target.value); setPreset('custom') }} />
-        </label>
-        <label className="input-group" style={{ minWidth: '240px' }}>
+          <DatePicker ariaLabel="ដល់" value={endDate} min={startDate}
+            onChange={(v) => { setEndDate(v); setPreset('custom') }} />
+        </div>
+        <div className="input-group an-category" style={{ minWidth: '260px' }}>
           <span className="input-label">ផ្នែកសិស្ស</span>
-          <select className="input-field" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">គ្រប់ផ្នែក</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{formatCategory(c.roman_numeral, c.title)}</option>
-            ))}
-          </select>
-        </label>
+          <SelectMenu
+            ariaLabel="ផ្នែកសិស្ស"
+            value={categoryId}
+            onChange={setCategoryId}
+            options={[
+              { value: '', label: 'គ្រប់ផ្នែក' },
+              ...categories.map((c) => ({ value: c.id, prefix: formatRoman(c.roman_numeral), label: c.title })),
+            ]}
+          />
+        </div>
       </div>
 
       {loadError && (
@@ -203,8 +225,27 @@ export const AnalyticsExportPage: React.FC = () => {
         </section>
       </div>
 
+      {/* Category and gender insights for the same date range */}
+      <div className="insight-grid" style={{ opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s ease' }}>
+        <section className="glass-panel chart-card">
+          <div className="chart-card-head">
+            <h2 className="chart-card-title">សិស្សថ្មីតាមផ្នែក និងភេទ</h2>
+            <span className="chart-card-sub hide-phone">{khDate(startDate)} – {khDate(endDate)}</span>
+          </div>
+          <CategoryGenderBars rows={categoryGains} selectedId={categoryId} onSelect={setCategoryId} />
+        </section>
+
+        <section className="glass-panel chart-card">
+          <div className="chart-card-head">
+            <h2 className="chart-card-title">សិស្សតាមភេទ</h2>
+            <span className="chart-card-sub">{scopeLabel}</span>
+          </div>
+          <GenderSplit total={gained.total} female={gained.female} categories={categoryGains} />
+        </section>
+      </div>
+
       {/* Exports — same filters as the charts */}
-      <section className="glass-panel" style={{ padding: '18px 22px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+      <section className="glass-panel an-export" style={{ padding: '18px 22px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 220px' }}>
           <h2 className="chart-card-title">នាំចេញរបាយការណ៍</h2>
           <div className="chart-card-sub">ប្រើចន្លោះកាលបរិច្ឆេទ និងផ្នែកដូចខាងលើ</div>
@@ -215,12 +256,12 @@ export const AnalyticsExportPage: React.FC = () => {
             </div>
           )}
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+        <label className="an-year" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           ឆ្នាំសិក្សា
           <input type="number" className="input-field" style={{ width: '96px' }} value={academicYear}
             onChange={(e) => setAcademicYear(Number(e.target.value))} />
         </label>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="an-export-buttons" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {EXPORTS.map(({ format, label, ext, icon: Icon }) => (
             <button key={format} onClick={() => handleDownload(format, ext)} disabled={exporting !== null} className="btn btn-secondary">
               {exporting === format ? <RefreshCw size={15} className="spin" /> : <Icon size={15} />}
@@ -240,7 +281,7 @@ export const AnalyticsExportPage: React.FC = () => {
           <div className="chart-empty" style={{ minHeight: '100px' }}>មិនទាន់មានទិន្នន័យ</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+            <table className="days-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr>
                   <th style={{ padding: '10px 22px', textAlign: 'left' }}>កាលបរិច្ឆេទ</th>

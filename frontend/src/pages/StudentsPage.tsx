@@ -7,6 +7,8 @@ import { api } from '../lib/api'
 import { PaginatedResponse, Student, StudentExtraction, StudentImportResult, StudentInput } from '../types'
 import { useAuth } from '../context/AuthContext'
 import { StudentPhoto } from '../components/StudentPhoto'
+import { Segmented } from '../components/ui/Segmented'
+import { SelectMenu } from '../components/ui/SelectMenu'
 
 const GRADES = ['A', 'B', 'C', 'D', 'E'] as const
 const GENDER_LABEL: Record<string, string> = { M: 'ប្រុស', F: 'ស្រី' }
@@ -56,6 +58,9 @@ const toPayload = (f: FormState): StudentInput => ({
   phone: f.phone || null,
   note: f.note || null,
 })
+
+// Phones: don't open the keyboard the moment a form appears.
+const IS_TOUCH = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
 
 const dash = (v?: string | number | null) => (v === null || v === undefined || v === '' ? '–' : v)
 
@@ -368,6 +373,8 @@ export const StudentsPage: React.FC = () => {
 
   const openAdd = () => { clearScan(); resetPhoto(); setForm(EMPTY_FORM); setFormError(null); setFormFor('new') }
   const openEdit = (s: Student) => { clearScan(); resetPhoto(); setForm(toForm(s)); setFormError(null); setFormFor(s) }
+  const setValue = (key: keyof FormState) => (v: string) => setForm((f) => ({ ...f, [key]: v }))
+  const segClass = (key: string) => (scan?.result.found.includes(key) ? 'prefilled' : '')
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }))
 
@@ -509,14 +516,14 @@ export const StudentsPage: React.FC = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">បញ្ជីឈ្មោះសិស្ស</h1>
-          <p className="page-subtitle">បញ្ជីសិស្សដែលបានដាក់ពាក្យ ព្រមទាំងសាកលវិទ្យាល័យ និងជំនាញដែលស្នើសុំ</p>
+          <p className="page-subtitle hide-phone">បញ្ជីសិស្សដែលបានដាក់ពាក្យ ព្រមទាំងសាកលវិទ្យាល័យ និងជំនាញដែលស្នើសុំ</p>
         </div>
-        <div className="page-actions">
+        <div className="page-actions students-actions">
           <button onClick={fetchStudents} className="btn btn-ghost" aria-label="ផ្ទុកឡើងវិញ" title="ផ្ទុកឡើងវិញ">
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
 
-          <div ref={exportMenuRef} style={{ position: 'relative' }}>
+          <div ref={exportMenuRef} className="students-export" style={{ position: 'relative' }}>
             <button
               type="button"
               onClick={() => setExportMenuOpen((v) => !v)}
@@ -592,32 +599,20 @@ export const StudentsPage: React.FC = () => {
 
       {/* Filters */}
       <div className="filter-bar" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <select className="input-field" style={{ width: 'auto' }} value={year ?? ''} aria-label="ឆ្នាំសិក្សា"
-          onChange={(e) => { setYear(Number(e.target.value)); setPage(1) }}>
-          {yearOptions.map((y) => <option key={y} value={y}>ឆ្នាំ {y}</option>)}
-        </select>
+        <SelectMenu ariaLabel="ឆ្នាំសិក្សា" value={year ? String(year) : ''}
+          onChange={(v) => { setYear(Number(v)); setPage(1) }}
+          options={yearOptions.map((y) => ({ value: String(y), label: `ឆ្នាំ ${y}` }))} />
         <div className="filter-search" style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
           <input type="search" className="input-field" placeholder="ស្វែងរកឈ្មោះ លេខទូរស័ព្ទ សាលា…" value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)} style={{ paddingLeft: '36px' }} aria-label="ស្វែងរក" />
         </div>
-        <select className="input-field" style={{ width: 'auto' }} value={gender} aria-label="ភេទ"
-          onChange={(e) => { setGender(e.target.value); setPage(1) }}>
-          <option value="">គ្រប់ភេទ</option>
-          <option value="M">ប្រុស</option>
-          <option value="F">ស្រី</option>
-        </select>
-        <select className="input-field" style={{ width: 'auto' }} value={grade} aria-label="និទ្ទេស"
-          onChange={(e) => { setGrade(e.target.value); setPage(1) }}>
-          <option value="">គ្រប់និទ្ទេស</option>
-          {GRADES.map((g) => <option key={g} value={g}>និទ្ទេស {g}</option>)}
-        </select>
-        <select className="input-field" style={{ width: 'auto' }} value={stream} aria-label="ថ្នាក់"
-          onChange={(e) => { setStream(e.target.value); setPage(1) }}>
-          <option value="">គ្រប់ថ្នាក់</option>
-          <option value="science">វិទ្យាសាស្ត្រ</option>
-          <option value="social_science">វិទ្យាសាស្ត្រសង្គម</option>
-        </select>
+        <SelectMenu ariaLabel="ភេទ" value={gender} onChange={(v) => { setGender(v); setPage(1) }}
+          options={[{ value: '', label: 'គ្រប់ភេទ' }, { value: 'M', label: 'ប្រុស' }, { value: 'F', label: 'ស្រី' }]} />
+        <SelectMenu ariaLabel="និទ្ទេស" value={grade} onChange={(v) => { setGrade(v); setPage(1) }}
+          options={[{ value: '', label: 'គ្រប់និទ្ទេស' }, ...GRADES.map((g) => ({ value: g, label: `និទ្ទេស ${g}`, dot: `var(--grade-${g})` }))]} />
+        <SelectMenu ariaLabel="ថ្នាក់" value={stream} onChange={(v) => { setStream(v); setPage(1) }}
+          options={[{ value: '', label: 'គ្រប់ថ្នាក់' }, { value: 'science', label: 'វិទ្យាសាស្ត្រ' }, { value: 'social_science', label: 'វិទ្យាសាស្ត្រសង្គម' }]} />
         {hasFilters && <button onClick={clearFilters} className="link-button">សម្អាតតម្រង</button>}
       </div>
 
@@ -703,10 +698,9 @@ export const StudentsPage: React.FC = () => {
               ទំព័រ {data.meta.page} នៃ {data.meta.total_pages || 1} · សរុប {data.meta.total} នាក់
             </span>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <select className="input-field" style={{ width: 'auto', padding: '5px 8px', fontSize: '0.8rem' }} value={size}
-                onChange={(e) => { setSize(Number(e.target.value)); setPage(1) }} aria-label="ចំនួនក្នុងមួយទំព័រ">
-                {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} / ទំព័រ</option>)}
-              </select>
+              <SelectMenu ariaLabel="ចំនួនក្នុងមួយទំព័រ" className="select-menu-sm" placement="up" value={String(size)}
+                onChange={(v) => { setSize(Number(v)); setPage(1) }}
+                options={[25, 50, 100, 200].map((n) => ({ value: String(n), label: `${n} / ទំព័រ` }))} />
               <button disabled={!data.meta.has_prev} onClick={() => setPage((p) => Math.max(1, p - 1))} className="btn btn-secondary btn-sm"><ChevronLeft size={15} /> ថយក្រោយ</button>
               <button disabled={!data.meta.has_next} onClick={() => setPage((p) => p + 1)} className="btn btn-secondary btn-sm">ទៅមុខ <ChevronRight size={15} /></button>
             </div>
@@ -770,7 +764,7 @@ export const StudentsPage: React.FC = () => {
                     <StudentPhoto size="lg" name={form.full_name || '?'} src={src}
                       id={hasSaved ? editing!.id : undefined} version={hasSaved ? editing!.photo_version : null} />
                     <input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={onPhotoFile} />
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <div className="photo-actions" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
                       <button type="button" className="link-button" onClick={() => photoRef.current?.click()}>
                         {hasAny ? 'ប្តូររូប' : 'ជ្រើសរូប'}
                       </button>
@@ -789,35 +783,27 @@ export const StudentsPage: React.FC = () => {
               })()}
               <label className="input-group span-2">
                 <span className="input-label">គោត្តនាម-នាម <span className="req">*</span></span>
-                <input ref={nameRef} autoFocus required className={fieldClass('full_name')} value={form.full_name} onChange={set('full_name')} placeholder="ឧ. សុខ ដារ៉ា" maxLength={255} />
+                <input ref={nameRef} autoFocus={!IS_TOUCH} required className={fieldClass('full_name')} value={form.full_name} onChange={set('full_name')} placeholder="ឧ. សុខ ដារ៉ា" maxLength={255} />
               </label>
-              <label className="input-group">
+              <div className="input-group">
                 <span className="input-label">ភេទ <span className="req">*</span></span>
-                <select required className={fieldClass('gender')} value={form.gender} onChange={set('gender')}>
-                  <option value="">— ជ្រើសរើស —</option>
-                  <option value="M">ប្រុស</option>
-                  <option value="F">ស្រី</option>
-                </select>
-              </label>
-              <label className="input-group">
+                <Segmented ariaLabel="ភេទ" className={segClass('gender')} value={form.gender} onChange={setValue('gender')}
+                  options={[{ value: 'M', label: 'ប្រុស' }, { value: 'F', label: 'ស្រី' }]} />
+              </div>
+              <div className="input-group span-2 grade-field">
                 <span className="input-label">និទ្ទេស</span>
-                <select className={fieldClass('grade')} value={form.grade} onChange={set('grade')}>
-                  <option value="">–</option>
-                  {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </label>
+                <Segmented ariaLabel="និទ្ទេស" allowClear className={`segmented-grade ${segClass('grade')}`} value={form.grade} onChange={setValue('grade')}
+                  options={GRADES.map((g) => ({ value: g, label: <><span className="grade-pill-dot" style={{ background: `var(--grade-${g})` }} />{g}</>, title: `និទ្ទេស ${g}` }))} />
+              </div>
               <label className="input-group">
                 <span className="input-label">លំដាប់ពិន្ទុ</span>
                 <input type="number" min={1} inputMode="numeric" className={fieldClass('score_rank')} value={form.score_rank} onChange={set('score_rank')} placeholder="ឧទាហរណ៍៖ 152" />
               </label>
-              <label className="input-group">
+              <div className="input-group span-2">
                 <span className="input-label">ថ្នាក់</span>
-                <select className={fieldClass('stream')} value={form.stream} onChange={set('stream')}>
-                  <option value="">–</option>
-                  <option value="science">វិទ្យាសាស្ត្រ</option>
-                  <option value="social_science">វិទ្យាសាស្ត្រសង្គម</option>
-                </select>
-              </label>
+                <Segmented ariaLabel="ថ្នាក់" allowClear className={segClass('stream')} value={form.stream} onChange={setValue('stream')}
+                  options={[{ value: 'science', label: 'វិទ្យាសាស្ត្រ' }, { value: 'social_science', label: 'វិទ្យាសាស្ត្រសង្គម' }]} />
+              </div>
               <label className="input-group span-2">
                 <span className="input-label">វិទ្យាល័យ</span>
                 <input className={fieldClass('high_school')} value={form.high_school} onChange={set('high_school')} maxLength={255} />

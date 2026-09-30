@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Send, Copy, Check, AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { TelegramMessage } from '../types'
+import { DatePicker } from '../components/ui/DatePicker'
 
 interface TelegramCenterPageProps {
   initialDate?: string
@@ -156,12 +157,7 @@ export const TelegramCenterPage: React.FC<TelegramCenterPageProps> = ({ initialD
         <aside className="split-panel-side">
           <section>
             <h2 className="section-title">កាលបរិច្ឆេទរបាយការណ៍</h2>
-            <input
-              type="date"
-              className="input-field"
-              value={reportDate}
-              onChange={(e) => setReportDate(e.target.value)}
-            />
+            <DatePicker ariaLabel="កាលបរិច្ឆេទរបាយការណ៍" value={reportDate} onChange={setReportDate} />
           </section>
 
           <section>

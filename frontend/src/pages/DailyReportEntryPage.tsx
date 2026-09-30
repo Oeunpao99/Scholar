@@ -2,24 +2,34 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Save, AlertCircle, CheckCircle2, Layers, RefreshCw, Keyboard } from 'lucide-react'
 import confetti from 'canvas-confetti'
 import { api } from '../lib/api'
-import { formatRoman } from '../lib/format'
+import { formatRoman, shortCategory } from '../lib/format'
 import { Category } from '../types'
+import { DatePicker } from '../components/ui/DatePicker'
 
 interface DailyReportEntryPageProps {
   initialDate?: string
 }
 
 type GradeLetter = 'A' | 'B' | 'C' | 'D' | 'E'
-type Field = 'total' | 'female' | 'pp'
+type Field = 'total' | 'female' | 'pp' | 'kp'
 
-// Staff type what the report line gives, in its order:
+// Staff type what the report line gives:
 //   "-និទ្ទេស D ចំនួន : 03 នាក់ ស្រី 02 នាក់ (PP: 01 នាក់, KP: 02 នាក់)"
-// KP is never typed — it is always ចំនួន − PP, so ចំនួន = PP + KP holds.
+// PP and KP can be typed in either order. ចំនួន = PP + KP must hold:
+//  - with ចំនួន typed, the PP/KP not typed last is filled as ចំនួន − the other;
+//  - with ចំនួន empty, it is filled as PP + KP.
 interface GradeRow {
   grade: GradeLetter
   total: number
   female: number
   pp: number
+  kp: number
+}
+
+// Per-cell typing state, kept apart from the values so "dirty" compares numbers only.
+interface RowMeta {
+  lock: 'pp' | 'kp' // which of the two the user typed last
+  totalTyped: boolean // ចំនួន came from the user, not from PP + KP
 }
 
 type CategoryRows = Record<string, GradeRow[]>
@@ -30,12 +40,12 @@ const COLUMNS: Array<{ field: Field; label: string; hint: string }> = [
   { field: 'total', label: 'ចំនួន', hint: 'ចំនួនសិស្សសរុបនៃនិទ្ទេសនេះ' },
   { field: 'female', label: 'ស្រី', hint: 'ក្នុងនោះជាសិស្សស្រី' },
   { field: 'pp', label: 'ភ្នំពេញ (PP)', hint: 'ចំនួនដែលដាក់ពាក្យនៅភ្នំពេញ' },
+  { field: 'kp', label: 'ខេត្ត (KP)', hint: 'ចំនួនដែលដាក់ពាក្យនៅខេត្ត' },
 ]
-const KP_LABEL = 'ខេត្ត (KP)'
 
-const emptyRows = (): GradeRow[] => GRADES.map((grade) => ({ grade, total: 0, female: 0, pp: 0 }))
+const emptyRows = (): GradeRow[] => GRADES.map((grade) => ({ grade, total: 0, female: 0, pp: 0, kp: 0 }))
 const rowTotal = (r: GradeRow) => r.total
-const rowKp = (r: GradeRow) => Math.max(0, r.total - r.pp)
+const splitMismatch = (r: GradeRow) => r.total > 0 && (r.pp > 0 || r.kp > 0) && r.pp + r.kp !== r.total
 const today = () => new Date().toISOString().split('T')[0]
 
 const sumRows = (rows: GradeRow[]) =>
@@ -44,7 +54,7 @@ const sumRows = (rows: GradeRow[]) =>
       total: acc.total + r.total,
       female: acc.female + r.female,
       pp: acc.pp + r.pp,
-      kp: acc.kp + rowKp(r),
+      kp: acc.kp + r.kp,
     }),
     { total: 0, female: 0, pp: 0, kp: 0 }
   )
@@ -56,6 +66,7 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
   const [isBulkMode, setIsBulkMode] = useState<boolean>(false)
 
   const [rows, setRows] = useState<CategoryRows>({})
+  const [meta, setMeta] = useState<Record<string, RowMeta[]>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
   // What is saved on the server, to detect unsaved edits and to update vs create.
   const [savedSnapshot, setSavedSnapshot] = useState<string>('{}')
@@ -84,7 +95,9 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
         if (!rep.category_code) return
         nextRows[rep.category_code] = GRADES.map((grade) => {
           const g = rep.grades?.find((x) => x.grade === grade)
-          return { grade, total: g?.total ?? 0, female: g?.female ?? 0, pp: g?.pp ?? 0 }
+          const total = g?.total ?? 0
+          const pp = g?.pp ?? 0
+          return { grade, total, female: g?.female ?? 0, pp, kp: g?.kp ?? Math.max(0, total - pp) }
         })
         nextNotes[rep.category_code] = rep.note || ''
         if (rep.source !== 'missing') ids[rep.category_code] = rep.id
@@ -93,6 +106,7 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
       console.error('Failed to fetch existing day report', err)
     } finally {
       setRows(nextRows)
+      setMeta({})
       setNotes(nextNotes)
       setExistingIds(ids)
       setSavedSnapshot(JSON.stringify({ rows: nextRows, notes: nextNotes }))
@@ -113,13 +127,38 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
     return JSON.stringify(rowsFor(code)) !== savedRows || (notes[code] || '') !== savedNote
   }
 
+  const metaFor = (code: string, rowIdx: number): RowMeta =>
+    meta[code]?.[rowIdx] ?? { lock: 'pp', totalTyped: rowsFor(code)[rowIdx].total > 0 }
+
   const setCell = (code: string, rowIdx: number, field: Field, raw: string) => {
     const digits = raw.replace(/[^\d]/g, '')
     const value = digits === '' ? 0 : Math.min(99999, parseInt(digits, 10))
+    const m = { ...metaFor(code, rowIdx) }
+    const r = { ...rowsFor(code)[rowIdx], [field]: value }
+
+    if (field === 'total') {
+      m.totalTyped = value > 0
+      // Keep the side typed last; refill the other from the new total.
+      if (value > 0 && (r.pp > 0 || r.kp > 0)) {
+        if (m.lock === 'pp') r.kp = Math.max(0, value - r.pp)
+        else r.pp = Math.max(0, value - r.kp)
+      }
+    } else if (field === 'pp' || field === 'kp') {
+      m.lock = field
+      const other = field === 'pp' ? 'kp' : 'pp'
+      if (m.totalTyped && r.total > 0) r[other] = Math.max(0, r.total - value)
+      else r.total = r.pp + r.kp
+    }
+
     setRows((prev) => {
       const next = [...(prev[code] || emptyRows())]
-      next[rowIdx] = { ...next[rowIdx], [field]: value }
+      next[rowIdx] = r
       return { ...prev, [code]: next }
+    })
+    setMeta((prev) => {
+      const list = [...(prev[code] || GRADES.map((_, i) => metaFor(code, i)))]
+      list[rowIdx] = m
+      return { ...prev, [code]: list }
     })
     setStatus(null)
   }
@@ -128,6 +167,10 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
     rowsFor(code).flatMap((r) => [
       ...(r.female > r.total ? [`និទ្ទេស ${r.grade}: ស្រី (${r.female}) មិនអាចលើសចំនួន (${r.total}) បានឡើយ`] : []),
       ...(r.pp > r.total ? [`និទ្ទេស ${r.grade}: ភ្នំពេញ (${r.pp}) មិនអាចលើសចំនួន (${r.total}) បានឡើយ`] : []),
+      ...(r.kp > r.total ? [`និទ្ទេស ${r.grade}: ខេត្ត (${r.kp}) មិនអាចលើសចំនួន (${r.total}) បានឡើយ`] : []),
+      ...(splitMismatch(r) && r.pp <= r.total && r.kp <= r.total
+        ? [`និទ្ទេស ${r.grade}: ភ្នំពេញ (${r.pp}) + ខេត្ត (${r.kp}) ត្រូវតែស្មើចំនួន (${r.total})`]
+        : []),
     ])
 
   const targets = isBulkMode ? categories.map((c) => c.code) : [selectedCode]
@@ -150,8 +193,8 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
       for (const code of dirtyTargets) {
         const list = rowsFor(code)
         const grades = list
-          .filter((r) => r.total > 0 || r.female > 0 || r.pp > 0)
-          .map((r) => ({ grade: r.grade, total: r.total, female: r.female, pp: r.pp, kp: rowKp(r) }))
+          .filter((r) => r.total > 0 || r.female > 0 || r.pp > 0 || r.kp > 0)
+          .map((r) => ({ grade: r.grade, total: r.total, female: r.female, pp: r.pp, kp: r.kp }))
         const note = notes[code] || null
 
         if (existingIds[code]) {
@@ -213,13 +256,13 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
 
     return (
       <section key={code} className="glass-panel" style={{ overflow: 'hidden' }}>
-        <div style={{ padding: '18px 22px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+        <div className="entry-card-head" style={{ padding: '18px 22px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
           <div>
             <h2 style={{ fontSize: '1.05rem' }}>
               {formatRoman(cat?.roman_numeral)} {cat?.title || code}
             </h2>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-              បញ្ចូលតាមលំដាប់របាយការណ៍: ចំនួន → ស្រី → ភ្នំពេញ — KP គណនាដោយស្វ័យប្រវត្តិ (ចំនួន − ភ្នំពេញ)
+              បញ្ចូល ភ្នំពេញ ឬ ខេត្ត មុនក៏បាន — ប្រអប់ម្ខាងទៀតបំពេញដោយស្វ័យប្រវត្តិ (ភ្នំពេញ + ខេត្ត = ចំនួន)
             </p>
           </div>
           {existingIds[code] && !isDirty(code) && (
@@ -236,7 +279,6 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
                 {COLUMNS.map((c) => (
                   <th key={c.field} title={c.hint}>{c.label}</th>
                 ))}
-                <th className="entry-total-col" title="គណនាដោយស្វ័យប្រវត្តិ: ចំនួន − ភ្នំពេញ">{KP_LABEL}</th>
               </tr>
             </thead>
             <tbody>
@@ -246,11 +288,13 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
                   <tr key={row.grade} className={total > 0 ? 'has-value' : ''}>
                     <th scope="row" className="entry-grade">
                       <span className="entry-grade-letter" data-grade={row.grade}>{row.grade}</span>
-                      និទ្ទេស {row.grade}
+                      <span className="entry-grade-name">និទ្ទេស {row.grade}</span>
                     </th>
                     {COLUMNS.map((c, cIdx) => {
                       const value = row[c.field]
-                      const invalid = (c.field === 'female' || c.field === 'pp') && value > total
+                      const invalid =
+                        (c.field !== 'total' && value > total) ||
+                        ((c.field === 'pp' || c.field === 'kp') && splitMismatch(row))
                       return (
                         <td key={c.field}>
                           <input
@@ -271,7 +315,6 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
                         </td>
                       )
                     })}
-                    <td className="entry-total-col">{total > 0 && row.pp <= total ? rowKp(row) : '–'}</td>
                   </tr>
                 )
               })}
@@ -282,7 +325,7 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
                 <td>{sums.total}</td>
                 <td>{sums.female}</td>
                 <td>{sums.pp}</td>
-                <td className="entry-total-col">{sums.kp}</td>
+                <td>{sums.kp}</td>
               </tr>
             </tfoot>
           </table>
@@ -295,18 +338,8 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
           </div>
         )}
 
-        <div style={{ padding: '4px 22px 20px' }}>
-          <label className="input-label" htmlFor={`note-${code}`}>កំណត់សម្គាល់ (មិនចាំបាច់)</label>
-          <input
-            id={`note-${code}`}
-            type="text"
-            value={notes[code] || ''}
-            onChange={(e) => setNotes({ ...notes, [code]: e.target.value })}
-            placeholder="ឧ. ទិន្នន័យមកពីការិយាល័យកណ្តាល ឬបញ្ជាក់អំពីសិស្សផ្ទេរ..."
-            className="input-field"
-            style={{ marginTop: '6px' }}
-          />
-        </div>
+        {/* The note field was removed from entry; notes already on a report are still sent back unchanged on save. */}
+        <div style={{ height: 16 }} />
       </section>
     )
   }
@@ -321,14 +354,7 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
         <div className="page-actions">
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             កាលបរិច្ឆេទ
-            <input
-              type="date"
-              className="input-field"
-              style={{ width: 'auto', fontWeight: 600 }}
-              value={reportDate}
-              max={today()}
-              onChange={(e) => setReportDate(e.target.value)}
-            />
+            <DatePicker ariaLabel="កាលបរិច្ឆេទ" value={reportDate} max={today()} onChange={setReportDate} />
           </label>
           <button
             onClick={() => setIsBulkMode(!isBulkMode)}
@@ -353,8 +379,9 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
                 aria-selected={active}
                 onClick={() => setSelectedCode(cat.code)}
                 className={`tab ${active ? 'active' : ''}`}
+                title={cat.title}
               >
-                <span>{formatRoman(cat.roman_numeral)} {cat.title}</span>
+                <span>{formatRoman(cat.roman_numeral)} {shortCategory(cat.title)}</span>
                 <span className={`tab-count ${count > 0 ? 'filled' : ''}`}>{count}</span>
                 {isDirty(cat.code) && <span className="tab-dirty" title="មិនទាន់រក្សាទុក" />}
               </button>
@@ -365,21 +392,21 @@ export const DailyReportEntryPage: React.FC<DailyReportEntryPageProps> = ({ init
 
       {isBulkMode ? categories.map((cat) => renderGrid(cat.code)) : renderGrid(selectedCode)}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+      <div className="entry-keyhint" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-dim)' }}>
         <Keyboard size={14} />
         ចុច Enter ឬ ↓ ដើម្បីទៅប្រអប់បន្ទាប់ · ← → ដើម្បីប្តូរជួរឈរ
       </div>
 
       {/* Save row — status on the left; totals sit right beside the save button. */}
       <div className="save-bar">
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className={status ? 'save-bar-status' : 'save-bar-status hide-phone'} style={{ flex: 1, minWidth: 0 }}>
           {status ? (
             <span role="status" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: status.type === 'success' ? 'var(--emerald-primary)' : 'var(--rose-primary)' }}>
               {status.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
               {status.text}
             </span>
           ) : dirtyTargets.length > 0 ? (
-            <span style={{ fontSize: '0.85rem', color: 'var(--amber-primary)' }}>មានការកែប្រែមិនទាន់រក្សាទុក</span>
+            <span className="hide-phone" style={{ fontSize: '0.85rem', color: 'var(--amber-primary)' }}>មានការកែប្រែមិនទាន់រក្សាទុក</span>
           ) : null}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '18px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>

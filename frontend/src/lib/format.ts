@@ -35,6 +35,21 @@ export const khDate = (iso: string): string => {
   return `${d}/${m}/${y}`
 }
 
+const KHMER_DIGITS = '០១២៣៤៥៦៧៨៩'
+export const toKhmerDigits = (s: string): string => s.replace(/[0-9]/g, (d) => KHMER_DIGITS[Number(d)])
+
+/**
+ * Short category name for tight spots (tabs):
+ * "បានទទួលពាក្យបាក់ឌុបឆ្នាំ2026" → "ឆ្នាំ២០២៦",
+ * "បានទទួលពាក្យបាក់ឌុបមុនឆ្នាំ2026" → "មុនឆ្នាំ២០២៦",
+ * "បានទទួលពាក្យបាក់ឌុបខេត្តផ្សេង" → "ខេត្តផ្សេងៗ".
+ */
+export const shortCategory = (title?: string | null): string => {
+  let t = (title || '').replace(/^បានទទួលពាក្យបាក់ឌុប\s*/, '').trim()
+  if (t.endsWith('ខេត្តផ្សេង')) t += 'ៗ'
+  return toKhmerDigits(t) || (title || '')
+}
+
 /** "I." + title → "I. title" */
 export const formatCategory = (roman?: string | null, title?: string | null): string =>
   [formatRoman(roman), title || ''].filter(Boolean).join(' ')

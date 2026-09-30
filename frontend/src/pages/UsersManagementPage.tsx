@@ -175,29 +175,27 @@ export const UsersManagementPage: React.FC = () => {
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+      <div className="page-header users-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h1 className="page-title">គ្រប់គ្រងអ្នកប្រើប្រាស់ និងតួនាទី</h1>
-          </div>
+          <h1 className="page-title">អ្នកប្រើប្រាស់<span className="hide-phone"> និងតួនាទី</span></h1>
           <p className="page-subtitle">
             បន្ថែម ប្តូរតួនាទី កំណត់ពាក្យសម្ងាត់ឡើងវិញ និងត្រួតពិនិត្យសកម្មភាពគណនីបុគ្គលិក
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="page-actions">
+          <button onClick={fetchUsers} className="btn btn-secondary" aria-label="ផ្ទុកឡើងវិញ" title="ផ្ទុកឡើងវិញ">
+            <RefreshCw size={15} className={loading ? 'pulse-glow' : ''} />
+          </button>
           <button onClick={() => setIsAddOpen(true)} className="btn btn-primary">
             <UserPlus size={16} />
-            បន្ថែមអ្នកប្រើប្រាស់ថ្មី
-          </button>
-          <button onClick={fetchUsers} className="btn btn-secondary">
-            <RefreshCw size={15} className={loading ? 'pulse-glow' : ''} />
+            បន្ថែមអ្នកប្រើប្រាស់
           </button>
         </div>
       </div>
 
       {/* Filter / Search Bar */}
-      <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+      <div className="glass-panel users-search" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
         <div style={{ position: 'relative', maxWidth: '360px', width: '100%' }}>
           <input
             type="text"

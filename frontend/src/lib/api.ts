@@ -78,7 +78,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       if (text) errorMsg = text
     }
 
-    if (response.status === 401) {
+    // An expired session: drop it and go back to the login screen. A failed
+    // login attempt is also a 401, but it must stay on the page so the form
+    // can show the error - reloading would wipe it.
+    if (response.status === 401 && token && !endpoint.startsWith('/auth/login')) {
       localStorage.removeItem('scholar_token')
       localStorage.removeItem('scholar_user')
       if (!window.location.pathname.includes('/login')) {

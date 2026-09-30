@@ -1,239 +1,184 @@
-import React, { useState } from 'react'
-import {
-  Lock,
-  User,
-  ArrowRight,
-  AlertCircle,
-  ShieldCheck,
-  Eye,
-  EyeOff,
-  Sun,
-  Moon
-} from 'lucide-react'
+import React, { useRef, useState } from 'react'
+import { Lock, User, ArrowRight, AlertCircle, ShieldCheck, Eye, EyeOff, Sun, Moon, RefreshCw } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import confetti from 'canvas-confetti'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 
+type LoginError = { message: string; field?: 'username' | 'password' | 'both' }
+
+/** Turn an API failure into a message people can act on. */
+const describeError = (err: any): LoginError => {
+  const status: number | undefined = err?.status
+  if (status === 401) return { message: 'ឈ្មោះគណនី ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវ។ សូមពិនិត្យ ហើយព្យាយាមម្តងទៀត។', field: 'both' }
+  if (status === 422) return { message: 'ពាក្យសម្ងាត់ត្រូវមានយ៉ាងហោចណាស់ ៦ តួអក្សរ។', field: 'password' }
+  if (status === 403) return { message: 'គណនីនេះត្រូវបានបិទ។ សូមទាក់ទងអ្នកគ្រប់គ្រងប្រព័ន្ធ។', field: 'username' }
+  if (status === 429) return { message: 'ព្យាយាមចូលច្រើនដងពេក។ សូមរង់ចាំបន្តិច រួចព្យាយាមម្តងទៀត។' }
+  if (status && status >= 500) return { message: 'ម៉ាស៊ីនមេមានបញ្ហា។ សូមព្យាយាមម្តងទៀតនៅពេលក្រោយ។' }
+  if (err instanceof TypeError) return { message: 'មិនអាចភ្ជាប់ទៅម៉ាស៊ីនមេបានទេ។ សូមពិនិត្យអ៊ីនធឺណិត។' }
+  return { message: err?.message || 'ការចូលមិនបានសម្រេច។ សូមព្យាយាមម្តងទៀត។' }
+}
+
 export const LoginPage: React.FC = () => {
   const { login } = useAuth()
   const { theme, toggleTheme } = useTheme()
-  const [username, setUsername] = useState<string>('')
-  const [password, setPassword] = useState<string>('')
-  const [loading, setLoading] = useState<boolean>(false)
-  const [error, setError] = useState<string | null>(null)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<LoginError | null>(null)
+  // Bumped on every failure so the error box re-runs its shake animation.
+  const [attempt, setAttempt] = useState(0)
   const [showPassword, setShowPassword] = useState(false)
+  const [capsLock, setCapsLock] = useState(false)
+  const usernameRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+
+  const fail = (e: LoginError) => {
+    setError(e)
+    setAttempt((n) => n + 1)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!username || !password) {
-      setError('សូមបញ្ចូលឈ្មោះគណនី និងពាក្យសម្ងាត់')
+    if (!username.trim()) {
+      fail({ message: 'សូមបញ្ចូលឈ្មោះគណនី ឬអ៊ីមែល', field: 'username' })
+      usernameRef.current?.focus()
+      return
+    }
+    if (!password) {
+      fail({ message: 'សូមបញ្ចូលពាក្យសម្ងាត់', field: 'password' })
+      passwordRef.current?.focus()
       return
     }
 
     setLoading(true)
     setError(null)
     try {
-      await login(username, password)
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.7 },
-      })
+      await login(username.trim(), password)
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } })
     } catch (err: any) {
-      setError(err.message || 'ឈ្មោះគណនី ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវ')
+      const described = describeError(err)
+      fail(described)
+      if (described.field === 'both' || described.field === 'password') {
+        setPassword('')
+        passwordRef.current?.focus()
+      } else if (described.field === 'username') {
+        usernameRef.current?.focus()
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  return (
-    <div
-      className="login-screen"
-      style={{
-        minHeight: '100dvh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Background glowing orbs */}
-      <div
-        style={{
-          position: 'absolute',
-          width: '500px',
-          height: '500px',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, var(--accent-soft) 0%, transparent 70%)',
-          top: '10%',
-          left: '15%',
-          pointerEvents: 'none',
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          width: '450px',
-          height: '450px',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, var(--accent-soft) 0%, transparent 70%)',
-          bottom: '10%',
-          right: '15%',
-          pointerEvents: 'none',
-        }}
-      />
+  const invalid = (f: 'username' | 'password') => !!error && (error.field === f || error.field === 'both')
+  const onType = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setter(e.target.value)
+    if (error) setError(null)
+  }
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => setCapsLock(e.getModifierState?.('CapsLock') ?? false)
 
-      {/* Top right theme toggle */}
-      <div style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 20 }}>
+  return (
+    <div className="login-screen">
+      <div className="login-glow" aria-hidden="true" />
+
+      <header className="login-top">
         <button
           onClick={toggleTheme}
           type="button"
-          className="btn btn-secondary btn-sm"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 14px',
-            borderRadius: 'var(--radius-full)',
-            boxShadow: 'var(--shadow-sm)',
-          }}
+          className="btn btn-secondary btn-sm login-theme"
           title={theme === 'light' ? 'ប្តូរទៅផ្ទៃងងឹត' : 'ប្តូរទៅផ្ទៃពន្លឺ'}
         >
-          {theme === 'light' ? (
-            <>
-              <Moon size={15} color="var(--sky-primary)" />
-              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>ងងឹត</span>
-            </>
-          ) : (
-            <>
-              <Sun size={15} color="var(--amber-primary)" />
-              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>ពន្លឺ</span>
-            </>
-          )}
+          {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+          <span>{theme === 'light' ? 'ងងឹត' : 'ពន្លឺ'}</span>
         </button>
-      </div>
+      </header>
 
-      <div
-        className="glass-panel animate-fade-in login-card"
-        style={{
-          maxWidth: '440px',
-          width: '100%',
-          borderRadius: '24px',
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--shadow-lg), var(--shadow-glow-cyan)',
-          position: 'relative',
-          zIndex: 10,
-        }}
-      >
-        {/* Brand header */}
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <Logo size={64} style={{ margin: '0 auto 16px', borderRadius: 18, boxShadow: 'var(--shadow-glow-cyan)' }} />
-
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
-            SCHOLAR
-          </h1>
-          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            ប្រព័ន្ធគ្រប់គ្រងការចុះឈ្មោះសិស្សបាក់ឌុប
-          </div>
+      <main className="login-card animate-fade-in">
+        <div className="login-brand">
+          <Logo size={60} style={{ borderRadius: 16 }} />
+          <h1>SCHOLAR</h1>
+          <p>ប្រព័ន្ធគ្រប់គ្រងការចុះឈ្មោះសិស្សបាក់ឌុប</p>
         </div>
 
-        {/* Error Alert */}
         {error && (
-          <div
-            style={{
-              background: 'var(--rose-soft)',
-              border: '1px solid var(--rose-border)',
-              borderRadius: '12px',
-              padding: '12px 14px',
-              marginBottom: '20px',
-              color: 'var(--rose-primary)',
-              fontSize: '0.85rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-            }}
-          >
-            <AlertCircle size={18} />
-            <span>{error}</span>
+          <div key={attempt} role="alert" aria-live="assertive" className="login-error">
+            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+            <span>{error.message}</span>
           </div>
         )}
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          <div className="input-group">
-            <label className="input-label">ឈ្មោះគណនី ឬអ៊ីមែល</label>
-            <div style={{ position: 'relative' }}>
+        <form onSubmit={handleSubmit} noValidate className="login-form">
+          <label className="input-group">
+            <span className="input-label">ឈ្មោះគណនី ឬអ៊ីមែល</span>
+            <span className="login-field">
+              <User size={17} className="login-field-icon" />
               <input
+                ref={usernameRef}
                 type="text"
-                required
                 autoComplete="username"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
                 inputMode="email"
-                className="input-field font-outfit"
+                className={`input-field font-outfit ${invalid('username') ? 'is-invalid' : ''}`}
+                aria-invalid={invalid('username')}
                 placeholder="name@example.com"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                style={{ paddingLeft: '38px' }}
+                onChange={onType(setUsername)}
+                onKeyUp={onKey}
+                disabled={loading}
               />
-              <User size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
-            </div>
-          </div>
+            </span>
+          </label>
 
-          <div className="input-group">
-            <label className="input-label">ពាក្យសម្ងាត់</label>
-            <div style={{ position: 'relative' }}>
+          <label className="input-group">
+            <span className="input-label">ពាក្យសម្ងាត់</span>
+            <span className="login-field">
+              <Lock size={17} className="login-field-icon" />
               <input
+                ref={passwordRef}
                 type={showPassword ? 'text' : 'password'}
-                required
                 autoComplete="current-password"
-                className="input-field font-outfit"
+                className={`input-field font-outfit ${invalid('password') ? 'is-invalid' : ''}`}
+                aria-invalid={invalid('password')}
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                style={{ paddingLeft: '38px', paddingRight: '42px' }}
+                onChange={onType(setPassword)}
+                onKeyUp={onKey}
+                disabled={loading}
+                style={{ paddingRight: 46 }}
               />
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="btn btn-ghost login-eye"
                 onClick={() => setShowPassword((v) => !v)}
                 aria-label={showPassword ? 'លាក់ពាក្យសម្ងាត់' : 'បង្ហាញពាក្យសម្ងាត់'}
                 title={showPassword ? 'លាក់ពាក្យសម្ងាត់' : 'បង្ហាញពាក្យសម្ងាត់'}
-                style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', padding: '6px' }}
               >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
-              <Lock size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
-            </div>
-          </div>
+            </span>
+            {capsLock && <span className="login-hint">Caps Lock កំពុងបើក</span>}
+          </label>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%', marginTop: '6px' }}
-          >
+          <button type="submit" disabled={loading} className="btn btn-primary btn-lg login-submit">
             {loading ? (
-              'កំពុងផ្ទៀងផ្ទាត់...'
+              <>
+                <RefreshCw size={17} className="spin" /> កំពុងផ្ទៀងផ្ទាត់…
+              </>
             ) : (
               <>
-                ចូលប្រើប្រាស់ប្រព័ន្ធ
-                <ArrowRight size={18} />
+                ចូលប្រើប្រាស់ប្រព័ន្ធ <ArrowRight size={18} />
               </>
             )}
           </button>
         </form>
 
-        <div style={{ marginTop: '24px', paddingTop: '18px', borderTop: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-dim)', textAlign: 'center' }}>
+        <footer className="login-foot">
           <ShieldCheck size={15} style={{ flexShrink: 0 }} />
           <span>មិនទាន់មានគណនី ឬភ្លេចពាក្យសម្ងាត់? សូមទាក់ទងអ្នកគ្រប់គ្រងប្រព័ន្ធ</span>
-        </div>
-      </div>
+        </footer>
+      </main>
     </div>
   )
 }

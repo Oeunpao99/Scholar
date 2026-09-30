@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import App from './App'
+import '@fontsource-variable/kantumruy-pro'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(

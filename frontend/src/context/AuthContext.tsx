@@ -46,17 +46,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth()
   }, [])
 
+  // No global isLoading here: it swaps the login page for the splash screen,
+  // which remounts the form and throws away its error message. The form shows
+  // its own progress.
   const login = async (loginText: string, passText: string) => {
-    setIsLoading(true)
+    const res = await api.login(loginText, passText)
+    localStorage.setItem('scholar_token', res.access_token)
     try {
-      const res = await api.login(loginText, passText)
-      localStorage.setItem('scholar_token', res.access_token)
-      setToken(res.access_token)
       const me = await api.getMe()
+      setToken(res.access_token)
       setUser(me)
       localStorage.setItem('scholar_user', JSON.stringify(me))
-    } finally {
-      setIsLoading(false)
+    } catch (err) {
+      localStorage.removeItem('scholar_token')
+      throw err
     }
   }
 

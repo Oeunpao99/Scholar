@@ -13,6 +13,7 @@ import {
 } from '../lib/auditFormat'
 import { AuditLogItem, PaginatedResponse } from '../types'
 import { useAuth } from '../context/AuthContext'
+import { SelectMenu } from '../components/ui/SelectMenu'
 
 const EMPTY: PaginatedResponse<AuditLogItem> = {
   items: [],
@@ -90,18 +91,18 @@ export const AuditLogsPage: React.FC = () => {
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div className="page-header">
+      <div className="page-header page-header-inline">
         <div>
           <h1 className="page-title">កំណត់ហេតុសវនកម្ម</h1>
           <p className="page-subtitle">ប្រវត្តិរាល់សកម្មភាព — អ្នកណា ធ្វើអ្វី និងនៅពេលណា</p>
         </div>
-        <button onClick={fetchLogs} className="btn btn-secondary btn-sm" disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'spin' : ''} /> ផ្ទុកឡើងវិញ
+        <button onClick={fetchLogs} className="btn btn-secondary btn-sm" disabled={loading} aria-label="ផ្ទុកឡើងវិញ" title="ផ្ទុកឡើងវិញ">
+          <RefreshCw size={14} className={loading ? 'spin' : ''} /> <span className="hide-phone">ផ្ទុកឡើងវិញ</span>
         </button>
       </div>
 
       {/* Filters — one plain row */}
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="audit-filters" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: '380px' }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
           <input
@@ -114,14 +115,10 @@ export const AuditLogsPage: React.FC = () => {
             aria-label="ស្វែងរក"
           />
         </div>
-        <select className="input-field" style={{ width: 'auto' }} value={action} onChange={(e) => { setAction(e.target.value); setPage(1) }} aria-label="សកម្មភាព">
-          <option value="">សកម្មភាពទាំងអស់</option>
-          {Object.entries(ACTION_META).map(([value, m]) => <option key={value} value={value}>{m.label}</option>)}
-        </select>
-        <select className="input-field" style={{ width: 'auto' }} value={entityType} onChange={(e) => { setEntityType(e.target.value); setPage(1) }} aria-label="ប្រភេទ">
-          <option value="">គ្រប់ប្រភេទ</option>
-          {Object.entries(ENTITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
+        <SelectMenu ariaLabel="សកម្មភាព" value={action} onChange={(v) => { setAction(v); setPage(1) }}
+          options={[{ value: '', label: 'សកម្មភាពទាំងអស់' }, ...Object.entries(ACTION_META).map(([value, m]) => ({ value, label: m.label }))]} />
+        <SelectMenu ariaLabel="ប្រភេទ" value={entityType} onChange={(v) => { setEntityType(v); setPage(1) }}
+          options={[{ value: '', label: 'គ្រប់ប្រភេទ' }, ...Object.entries(ENTITY_LABELS).map(([value, label]) => ({ value, label }))]} />
         {hasFilters && <button onClick={clearFilters} className="link-button">សម្អាតតម្រង</button>}
       </div>
 
@@ -161,7 +158,7 @@ export const AuditLogsPage: React.FC = () => {
                     <td><ActionBadge action={log.action} /></td>
                     <td>
                       <div className="audit-summary">{khmerSummary(log.summary)}</div>
-                      <div className="audit-entity">{entityLabel(log.entity_type)}</div>
+                      <div className="audit-entity hide-phone">{entityLabel(log.entity_type)}</div>
                     </td>
                     <td><RowChevron size={16} color="var(--text-dim)" /></td>
                   </tr>

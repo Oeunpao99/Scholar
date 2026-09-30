@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import {
   Users,
-  Calendar,
   TrendingUp,
   UserCheck,
   Building2,
@@ -12,6 +11,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { DashboardResponse } from '../types'
+import { DatePicker } from '../components/ui/DatePicker'
 
 interface DashboardPageProps {
   onNavigate: (tab: string, dateParam?: string) => void
@@ -57,7 +57,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               ឆ្នាំ {data?.current_year || 2026}
             </span>
           </div>
-          <p className="page-subtitle">
+          <p className="page-subtitle hide-phone">
             ទិដ្ឋភាពរួមនៃការទទួលពាក្យសុំចុះឈ្មោះនិស្សិតប្រចាំថ្ងៃ និងសរុបទាំងអស់
           </p>
         </div>
@@ -65,31 +65,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         {/* Action Controls */}
         <div className="page-actions dash-actions">
           {/* Date Selector */}
-          <div className="dash-date" style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'var(--bg-card)',
-            padding: '7px 12px',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border-subtle)',
-          }}>
-            <Calendar size={15} color="var(--sky-primary)" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-main)',
-                fontFamily: 'var(--font-khmer)',
-                fontSize: '0.875rem',
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            />
-          </div>
+          <DatePicker className="dash-date" ariaLabel="កាលបរិច្ឆេទ" value={selectedDate} onChange={setSelectedDate} />
 
           <button
             onClick={() => onNavigate('daily-entry', selectedDate)}
@@ -150,7 +126,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--sky-primary)', fontFamily: 'var(--font-sans)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
             +{today.total.toLocaleString()}
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+          <div className="hide-phone" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
             ស្រី: <strong style={{ color: 'var(--text-main)' }}>{today.female}</strong> • ភ្នំពេញ: <strong style={{ color: 'var(--text-main)' }}>{today.pp}</strong> • ខេត្ត: <strong style={{ color: 'var(--text-main)' }}>{today.kp}</strong>
           </div>
         </div>
@@ -165,7 +141,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             {headline.female.toLocaleString()}
           </div>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-            ស្មើនឹង <strong style={{ color: 'var(--rose-primary)' }}>{gender.female_pct}%</strong> នៃចំនួនសរុប
+            <strong style={{ color: 'var(--rose-primary)' }}>{Math.round(gender.female_pct)}%</strong> នៃចំនួនសរុប
           </div>
         </div>
 
@@ -176,9 +152,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <Building2 size={16} color="var(--emerald-primary)" />
           </div>
           <div style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-sans)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
-            ភ្នំពេញ: {headline.pp.toLocaleString()} <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>|</span> ខេត្ត: {headline.kp.toLocaleString()}
+            {headline.pp.toLocaleString()} <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>/</span> {headline.kp.toLocaleString()}
+            <div style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)', letterSpacing: 0 }}>ភ្នំពេញ / ខេត្ត</div>
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+          <div className="hide-phone" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
             ភ្នំពេញ {provinces.pp_pct}% • ខេត្ត {provinces.kp_pct}%
           </div>
         </div>
@@ -191,7 +168,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>
               តារាងសង្ខេបតាមប្រភេទពាក្យស្នើសុំ
             </h2>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <p className="hide-phone" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               ទិន្នន័យលម្អិតបែងចែកតាមផ្នែក និទ្ទេស និងរាជធានី-ខេត្ត
             </p>
           </div>
@@ -221,6 +198,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               {(data?.categories || []).map((cat) => (
                 <tr
                   key={cat.category_id}
+                  className={cat.cumulative.total === 0 && cat.today.total === 0 ? 'ledger-empty' : undefined}
                   style={{ borderBottom: '1px solid var(--table-border)', transition: 'background-color 0.15s ease' }}
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--table-hover)'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -239,7 +217,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                     <span style={{ fontWeight: 700, color: 'var(--sky-primary)' }}>
                       +{cat.today.total}
                     </span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginLeft: '4px' }}>
+                    <span className="hide-phone" style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginLeft: '4px' }}>
                       (ស្រី {cat.today.female})
                     </span>
                   </td>
