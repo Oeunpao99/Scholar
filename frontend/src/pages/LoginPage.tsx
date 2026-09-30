@@ -1,15 +1,16 @@
 import React, { useState } from 'react'
 import {
-  GraduationCap,
   Lock,
   User,
   ArrowRight,
   AlertCircle,
-  Sparkles,
   ShieldCheck,
+  Eye,
+  EyeOff,
   Sun,
   Moon
 } from 'lucide-react'
+import { Logo } from '../components/Logo'
 import confetti from 'canvas-confetti'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
@@ -21,6 +22,7 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -45,30 +47,11 @@ export const LoginPage: React.FC = () => {
     }
   }
 
-  // Quick fill demo credentials
-  const handleQuickDemo = async () => {
-    setUsername('admin@scholar.local')
-    setPassword('ChangeMe123!')
-    setLoading(true)
-    setError(null)
-    try {
-      await login('admin@scholar.local', 'ChangeMe123!')
-      confetti({
-        particleCount: 60,
-        spread: 70,
-        origin: { y: 0.6 },
-      })
-    } catch (err: any) {
-      setError(err.message || 'ការចូលសាកល្បងមិនបានសម្រេច')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
     <div
+      className="login-screen"
       style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -134,11 +117,10 @@ export const LoginPage: React.FC = () => {
       </div>
 
       <div
-        className="glass-panel animate-fade-in"
+        className="glass-panel animate-fade-in login-card"
         style={{
           maxWidth: '440px',
           width: '100%',
-          padding: '40px 32px',
           borderRadius: '24px',
           background: 'var(--bg-card)',
           border: '1px solid var(--border-subtle)',
@@ -149,21 +131,7 @@ export const LoginPage: React.FC = () => {
       >
         {/* Brand header */}
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div
-            style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '18px',
-              background: 'var(--gradient-brand)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px',
-              boxShadow: 'var(--shadow-glow-cyan)',
-            }}
-          >
-            <GraduationCap size={36} color="#FFF" />
-          </div>
+          <Logo size={64} style={{ margin: '0 auto 16px', borderRadius: 18, boxShadow: 'var(--shadow-glow-cyan)' }} />
 
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
             SCHOLAR
@@ -202,8 +170,13 @@ export const LoginPage: React.FC = () => {
               <input
                 type="text"
                 required
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="email"
                 className="input-field font-outfit"
-                placeholder="admin@scholar.local"
+                placeholder="name@example.com"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 style={{ paddingLeft: '38px' }}
@@ -216,14 +189,25 @@ export const LoginPage: React.FC = () => {
             <label className="input-label">ពាក្យសម្ងាត់</label>
             <div style={{ position: 'relative' }}>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 required
+                autoComplete="current-password"
                 className="input-field font-outfit"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                style={{ paddingLeft: '38px' }}
+                style={{ paddingLeft: '38px', paddingRight: '42px' }}
               />
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'លាក់ពាក្យសម្ងាត់' : 'បង្ហាញពាក្យសម្ងាត់'}
+                title={showPassword ? 'លាក់ពាក្យសម្ងាត់' : 'បង្ហាញពាក្យសម្ងាត់'}
+                style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', padding: '6px' }}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
               <Lock size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
             </div>
           </div>
@@ -245,24 +229,9 @@ export const LoginPage: React.FC = () => {
           </button>
         </form>
 
-        {/* Quick Demo Button */}
-        <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginBottom: '10px' }}>
-            សម្រាប់តេស្តសាកល្បង
-          </div>
-          <button
-            type="button"
-            onClick={handleQuickDemo}
-            disabled={loading}
-            className="btn btn-secondary btn-sm"
-            style={{ width: '100%', borderColor: 'var(--accent-border)', color: 'var(--cyan-primary)' }}
-          >
-            <Sparkles size={14} />
-            ចូលដោយស្វ័យប្រវត្តិជាអ្នកគ្រប់គ្រងជាន់ខ្ពស់
-          </button>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '8px', fontFamily: 'var(--font-sans)' }}>
-            admin@scholar.local / ChangeMe123!
-          </div>
+        <div style={{ marginTop: '24px', paddingTop: '18px', borderTop: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-dim)', textAlign: 'center' }}>
+          <ShieldCheck size={15} style={{ flexShrink: 0 }} />
+          <span>មិនទាន់មានគណនី ឬភ្លេចពាក្យសម្ងាត់? សូមទាក់ទងអ្នកគ្រប់គ្រងប្រព័ន្ធ</span>
         </div>
       </div>
     </div>

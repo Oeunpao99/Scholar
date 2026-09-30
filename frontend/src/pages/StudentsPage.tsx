@@ -273,6 +273,13 @@ export const StudentsPage: React.FC = () => {
     return () => window.clearInterval(id)
   }, [scanning])
 
+  // Success messages fade on their own; errors stay until closed.
+  useEffect(() => {
+    if (!notice) return
+    const t = setTimeout(() => setNotice(null), 5000)
+    return () => clearTimeout(t)
+  }, [notice])
+
   useEffect(() => {
     api.getCurrentYear()
       .then((r) => { setCurrentYear(r.current_year); setYear(r.current_year) })
@@ -463,6 +470,42 @@ export const StudentsPage: React.FC = () => {
           </div>
         </div>
       )}
+      <div className="toast-stack">
+        {notice && (
+          <div role="status" className="notice notice-emerald">
+            <span style={{ flex: 1 }}>{notice}</span>
+            <button className="btn btn-ghost" style={{ padding: 2 }} onClick={() => setNotice(null)} aria-label="បិទ"><X size={14} /></button>
+          </div>
+        )}
+        {scanError && (
+          <div role="alert" className="notice notice-rose">
+            <AlertTriangle size={15} />
+            <span style={{ flex: 1 }}>{scanError}</span>
+            <button className="btn btn-ghost" style={{ padding: 2 }} onClick={() => setScanError(null)} aria-label="បិទ"><X size={14} /></button>
+          </div>
+        )}
+        {importResult && (
+          <div role="status" className={`notice ${importResult.created ? 'notice-emerald' : 'notice-amber'}`} style={{ alignItems: 'flex-start' }}>
+            <FileSpreadsheet size={15} style={{ marginTop: 3, flexShrink: 0 }} />
+            <div style={{ flex: 1, lineHeight: 1.6 }}>
+              <strong>{importResult.name}</strong>: បានបន្ថែម {importResult.created} នាក់
+              {importResult.duplicates > 0 && ` · រំលងស្ទួន ${importResult.duplicates}`}
+              {importResult.errors.length > 0 && ` · មានបញ្ហា ${importResult.errors.length} ជួរ`}
+              {importResult.errors.length > 0 && (
+                <details>
+                  <summary style={{ cursor: 'pointer' }}>មើលជួរដែលមានបញ្ហា</summary>
+                  <ul style={{ margin: '4px 0 0 18px', maxHeight: '40vh', overflowY: 'auto' }}>
+                    {importResult.errors.slice(0, 50).map((e) => <li key={`${e.row}-${e.message}`}>ជួរទី {e.row}: {e.message}</li>)}
+                    {importResult.errors.length > 50 && <li>… និង {importResult.errors.length - 50} ទៀត</li>}
+                  </ul>
+                </details>
+              )}
+            </div>
+            <button className="btn btn-ghost" style={{ padding: 2 }} onClick={() => setImportResult(null)} aria-label="បិទ"><X size={14} /></button>
+          </div>
+        )}
+      </div>
+
       <div className="page-header">
         <div>
           <h1 className="page-title">បញ្ជីឈ្មោះសិស្ស</h1>
@@ -547,42 +590,13 @@ export const StudentsPage: React.FC = () => {
         </div>
       </div>
 
-      {scanError && (
-        <div role="alert" className="notice notice-rose">
-          <AlertTriangle size={15} />
-          <span style={{ flex: 1 }}>{scanError}</span>
-          <button className="btn btn-ghost" style={{ padding: 2 }} onClick={() => setScanError(null)} aria-label="បិទ"><X size={14} /></button>
-        </div>
-      )}
-
-      {importResult && (
-        <div role="status" className={`notice ${importResult.created ? 'notice-emerald' : 'notice-amber'}`} style={{ alignItems: 'flex-start' }}>
-          <FileSpreadsheet size={15} style={{ marginTop: 3, flexShrink: 0 }} />
-          <div style={{ flex: 1, lineHeight: 1.6 }}>
-            <strong>{importResult.name}</strong>: បានបន្ថែម {importResult.created} នាក់
-            {importResult.duplicates > 0 && ` · រំលងស្ទួន ${importResult.duplicates}`}
-            {importResult.errors.length > 0 && ` · មានបញ្ហា ${importResult.errors.length} ជួរ`}
-            {importResult.errors.length > 0 && (
-              <details>
-                <summary style={{ cursor: 'pointer' }}>មើលជួរដែលមានបញ្ហា</summary>
-                <ul style={{ margin: '4px 0 0 18px' }}>
-                  {importResult.errors.slice(0, 50).map((e) => <li key={`${e.row}-${e.message}`}>ជួរទី {e.row}: {e.message}</li>)}
-                  {importResult.errors.length > 50 && <li>… និង {importResult.errors.length - 50} ទៀត</li>}
-                </ul>
-              </details>
-            )}
-          </div>
-          <button className="btn btn-ghost" style={{ padding: 2 }} onClick={() => setImportResult(null)} aria-label="បិទ"><X size={14} /></button>
-        </div>
-      )}
-
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="filter-bar" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
         <select className="input-field" style={{ width: 'auto' }} value={year ?? ''} aria-label="ឆ្នាំសិក្សា"
           onChange={(e) => { setYear(Number(e.target.value)); setPage(1) }}>
           {yearOptions.map((y) => <option key={y} value={y}>ឆ្នាំ {y}</option>)}
         </select>
-        <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
+        <div className="filter-search" style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
           <input type="search" className="input-field" placeholder="ស្វែងរកឈ្មោះ លេខទូរស័ព្ទ សាលា…" value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)} style={{ paddingLeft: '36px' }} aria-label="ស្វែងរក" />
@@ -606,13 +620,6 @@ export const StudentsPage: React.FC = () => {
         </select>
         {hasFilters && <button onClick={clearFilters} className="link-button">សម្អាតតម្រង</button>}
       </div>
-
-      {notice && (
-        <div role="status" className="notice notice-emerald">
-          <span style={{ flex: 1 }}>{notice}</span>
-          <button className="btn btn-ghost" style={{ padding: 2 }} onClick={() => setNotice(null)} aria-label="បិទ"><X size={14} /></button>
-        </div>
-      )}
 
       <section className="glass-panel" style={{ overflow: 'hidden' }}>
         {error ? (
@@ -653,28 +660,28 @@ export const StudentsPage: React.FC = () => {
               <tbody>
                 {data.items.map((s, i) => (
                   <tr key={s.id}>
-                    <td className="num">{rowOffset + i + 1}</td>
-                    <td className="center" style={{ paddingTop: 6, paddingBottom: 6 }}>
+                    <td className="num cell-index">{rowOffset + i + 1}</td>
+                    <td className="center cell-photo" style={{ paddingTop: 6, paddingBottom: 6 }}>
                       <StudentPhoto id={s.id} name={s.full_name} version={s.has_photo ? s.photo_version : null} />
                     </td>
-                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{s.full_name}</td>
-                    <td className="center">{GENDER_LABEL[s.gender] || s.gender}</td>
-                    <td className="center">
+                    <td className="cell-name" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{s.full_name}</td>
+                    <td className="center" data-label="ភេទ">{GENDER_LABEL[s.gender] || s.gender}</td>
+                    <td className="center" data-label="និទ្ទេស">
                       {s.grade ? (
                         <span className="grade-pill">
                           <span className="grade-pill-dot" style={{ background: `var(--grade-${s.grade})` }} />{s.grade}
                         </span>
                       ) : '–'}
                     </td>
-                    <td className="num">{dash(s.score_rank)}</td>
-                    <td>{dash(s.high_school)}</td>
-                    <td>{s.stream ? STREAM_LABEL[s.stream] : '–'}</td>
-                    <td>{dash(s.university)}</td>
-                    <td>{dash(s.major)}</td>
-                    <td style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{dash(s.phone)}</td>
-                    <td className="note-cell" title={s.note || undefined}>{dash(s.note)}</td>
+                    <td className="num" data-label="លំដាប់ពិន្ទុ">{dash(s.score_rank)}</td>
+                    <td data-label="វិទ្យាល័យ">{dash(s.high_school)}</td>
+                    <td data-label="ថ្នាក់">{s.stream ? STREAM_LABEL[s.stream] : '–'}</td>
+                    <td data-label="សាកលវិទ្យាល័យ">{dash(s.university)}</td>
+                    <td data-label="ជំនាញ">{dash(s.major)}</td>
+                    <td data-label="ទូរស័ព្ទ" style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{dash(s.phone)}</td>
+                    <td className="note-cell" data-label="ផ្សេងៗ" title={s.note || undefined}>{dash(s.note)}</td>
                     {(canEdit || canDelete) && (
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td className="cell-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {canEdit && (
                           <button onClick={() => openEdit(s)} className="btn btn-ghost" aria-label={`កែប្រែ ${s.full_name}`} title="កែប្រែ"><Pencil size={15} /></button>
                         )}
@@ -691,7 +698,7 @@ export const StudentsPage: React.FC = () => {
         )}
 
         {data && data.items.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--border-subtle)', flexWrap: 'wrap', gap: '10px' }}>
+          <div className="pager" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--border-subtle)', flexWrap: 'wrap', gap: '10px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               ទំព័រ {data.meta.page} នៃ {data.meta.total_pages || 1} · សរុប {data.meta.total} នាក់
             </span>

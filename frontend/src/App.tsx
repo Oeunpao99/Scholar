@@ -12,7 +12,8 @@ import { SettingsPage } from './pages/SettingsPage'
 import { UsersManagementPage } from './pages/UsersManagementPage'
 import { AuditLogsPage } from './pages/AuditLogsPage'
 import { StudentsPage } from './pages/StudentsPage'
-import { GraduationCap, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
+import { Logo } from './components/Logo'
 
 export const App: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth()
@@ -38,19 +39,7 @@ export const App: React.FC = () => {
           gap: '16px',
         }}
       >
-        <div
-          style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '16px',
-            background: 'var(--gradient-brand)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <GraduationCap size={32} color="#FFF" />
-        </div>
+        <Logo size={60} />
         <div style={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
           SCHOLAR
         </div>

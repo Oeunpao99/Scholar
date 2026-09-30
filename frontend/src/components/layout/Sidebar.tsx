@@ -1,5 +1,6 @@
 import React from 'react'
-import { GraduationCap, LogOut } from 'lucide-react'
+import { LogOut } from 'lucide-react'
+import { Logo } from '../Logo'
 import { useAuth } from '../../context/AuthContext'
 import { NAV_SECTIONS, ROLE_LABELS } from './navigation'
 
@@ -32,18 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onC
     <aside className="sidebar">
       {/* Brand */}
       <div className="sidebar-brand">
-        <div style={{
-          width: '34px',
-          height: '34px',
-          borderRadius: '9px',
-          background: 'var(--accent)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <GraduationCap size={20} color="#FFF" />
-        </div>
+        <Logo size={34} />
         <div className="sidebar-text" style={{ lineHeight: 1.25 }}>
           <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-main)' }}>SCHOLAR</div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>ប្រព័ន្ធចុះឈ្មោះបាក់ឌុប</div>
